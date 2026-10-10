@@ -1310,8 +1310,23 @@ apiRouter.get('/clicker/state', async (req: AuthenticatedRequest, res: Response)
   try {
     const user = await getOrCreateUser(req.telegramUser);
 
-    const clickerRes = await query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
-    const clicker = clickerRes.rows[0];
+    let clickerRes = await query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+    if (clickerRes.rowCount === 0) {
+      clickerRes = await query(
+        `INSERT INTO user_clicker (user_id, power_level, recharge_level, current_energy, last_energy_updated_at, total_clicks)
+         VALUES ($1, 1, 1, 100, CURRENT_TIMESTAMP, 0)
+         RETURNING *`,
+        [user.id]
+      );
+    }
+    const clicker = clickerRes.rows[0] || {
+      power_level: 1,
+      recharge_level: 1,
+      current_energy: 100,
+      last_energy_updated_at: new Date().toISOString(),
+      last_daily_help_at: null,
+      total_clicks: 0,
+    };
 
     const powerLevel = clicker.power_level || 1;
     const rechargeLevel = clicker.recharge_level || 1;
@@ -1346,26 +1361,43 @@ apiRouter.get('/clicker/state', async (req: AuthenticatedRequest, res: Response)
     const nextRechargeCost = nextRechargeLevel ? CLICKER_CONFIG.rechargeUpgradeCosts[nextRechargeLevel] : null;
     const secondsPerUnit = CLICKER_CONFIG.rechargeSecondsPerUnit[rechargeLevel] || 30;
 
+    const stateObj = {
+      coins: user.coins,
+      energy: energyCalc.currentEnergy,
+      maxEnergy: MAX_ENERGY,
+      energyPerSec: secondsPerUnit,
+      powerLevel,
+      energyLevel: rechargeLevel,
+      powerCoinsPerTap: powerLevel,
+      nextPowerCost,
+      nextPowerCoinsPerTap: nextPowerLevel,
+      nextEnergyCost: nextRechargeCost,
+      nextEnergySec: nextRechargeLevel ? CLICKER_CONFIG.rechargeSecondsPerUnit[nextRechargeLevel] : null,
+      totalTaps: clicker.total_clicks || 0,
+      canClaimDailyHelp,
+      dailyHelpCoins: DAILY_HELP_AMOUNT,
+      tasks: CLICKER_TASKS.map((t) => ({
+        id: t.id,
+        title: t.title,
+        desc: t.description,
+        rewardCoins: t.reward,
+        targetCount: t.targetCount,
+        currentProgress: Math.min(t.targetCount, clicker.total_clicks || 0),
+        isCompleted: (clicker.total_clicks || 0) >= t.targetCount,
+        isClaimed: false,
+      })),
+    };
+
     res.json({
       success: true,
-      coins: user.coins,
-      powerLevel,
+      state: stateObj,
+      ...stateObj,
+      currentEnergy: energyCalc.currentEnergy,
       coinsPerClick: powerLevel,
       rechargeLevel,
       secondsPerUnit,
-      currentEnergy: energyCalc.currentEnergy,
-      maxEnergy: MAX_ENERGY,
       secondsUntilNextEnergy: energyCalc.secondsUntilNextEnergy,
-      nextPowerCost,
-      nextRechargeCost,
-      canClaimDailyHelp,
-      dailyHelpSecondsRemaining,
-      dailyHelpAmount: DAILY_HELP_AMOUNT,
       totalClicks: clicker.total_clicks || 0,
-      tasks: CLICKER_TASKS.map((t) => ({
-        ...t,
-        completed: (clicker.total_clicks || 0) >= t.targetCount,
-      })),
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -1381,7 +1413,15 @@ apiRouter.post('/clicker/tap', async (req: AuthenticatedRequest, res: Response) 
     const user = await getOrCreateUser(req.telegramUser);
 
     const result = await withTransaction(async (client) => {
-      const cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      let cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      if (cRes.rowCount === 0) {
+        cRes = await client.query(
+          `INSERT INTO user_clicker (user_id, power_level, recharge_level, current_energy, last_energy_updated_at, total_clicks)
+           VALUES ($1, 1, 1, 100, CURRENT_TIMESTAMP, 0)
+           RETURNING *`,
+          [user.id]
+        );
+      }
       const clicker = cRes.rows[0];
 
       const powerLevel = clicker.power_level || 1;
@@ -1403,8 +1443,13 @@ apiRouter.post('/clicker/tap', async (req: AuthenticatedRequest, res: Response) 
         return {
           tapsProcessed: 0,
           coinsEarned: 0,
+          earnedCoins: 0,
+          energy: energyCalc.currentEnergy,
           currentEnergy: energyCalc.currentEnergy,
+          maxEnergy: MAX_ENERGY,
+          coins: user.coins,
           userCoins: user.coins,
+          totalTaps: clicker.total_clicks || 0,
           message: 'Недостаточно энергии для тапа',
         };
       }
@@ -1428,8 +1473,14 @@ apiRouter.post('/clicker/tap', async (req: AuthenticatedRequest, res: Response) 
       return {
         tapsProcessed: tapResult.allowedTaps,
         coinsEarned: tapResult.coinsEarned,
+        earnedCoins: tapResult.coinsEarned,
+        energy: tapResult.remainingEnergy,
         currentEnergy: tapResult.remainingEnergy,
+        maxEnergy: MAX_ENERGY,
+        coins: newCoins,
         userCoins: newCoins,
+        totalTaps: (clicker.total_clicks || 0) + tapResult.allowedTaps,
+        tapsToday: (clicker.total_clicks || 0) + tapResult.allowedTaps,
       };
     });
 
@@ -1445,7 +1496,15 @@ apiRouter.post('/clicker/upgrade-power', async (req: AuthenticatedRequest, res: 
     const user = await getOrCreateUser(req.telegramUser);
 
     const result = await withTransaction(async (client) => {
-      const cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      let cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      if (cRes.rowCount === 0) {
+        cRes = await client.query(
+          `INSERT INTO user_clicker (user_id, power_level, recharge_level, current_energy, last_energy_updated_at, total_clicks)
+           VALUES ($1, 1, 1, 100, CURRENT_TIMESTAMP, 0)
+           RETURNING *`,
+          [user.id]
+        );
+      }
       const clicker = cRes.rows[0];
       const currentPower = clicker.power_level || 1;
 
@@ -1474,8 +1533,12 @@ apiRouter.post('/clicker/upgrade-power', async (req: AuthenticatedRequest, res: 
       const nextCost = nextLevel < MAX_LEVEL ? CLICKER_CONFIG.powerUpgradeCosts[nextLevel + 1] : null;
 
       return {
+        newLevel: nextLevel,
         newPowerLevel: nextLevel,
+        coinsPerTap: nextLevel,
+        coinsRemaining: updatedCoins,
         newCoins: updatedCoins,
+        nextCost,
         nextPowerCost: nextCost,
       };
     });
@@ -1492,7 +1555,15 @@ apiRouter.post('/clicker/upgrade-energy', async (req: AuthenticatedRequest, res:
     const user = await getOrCreateUser(req.telegramUser);
 
     const result = await withTransaction(async (client) => {
-      const cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      let cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      if (cRes.rowCount === 0) {
+        cRes = await client.query(
+          `INSERT INTO user_clicker (user_id, power_level, recharge_level, current_energy, last_energy_updated_at, total_clicks)
+           VALUES ($1, 1, 1, 100, CURRENT_TIMESTAMP, 0)
+           RETURNING *`,
+          [user.id]
+        );
+      }
       const clicker = cRes.rows[0];
       const currentRecharge = clicker.recharge_level || 1;
 
@@ -1522,10 +1593,14 @@ apiRouter.post('/clicker/upgrade-energy', async (req: AuthenticatedRequest, res:
       const newSecondsPerUnit = CLICKER_CONFIG.rechargeSecondsPerUnit[nextLevel];
 
       return {
+        newLevel: nextLevel,
         newRechargeLevel: nextLevel,
-        newCoins: updatedCoins,
-        nextRechargeCost: nextCost,
+        secondsPerEnergy: newSecondsPerUnit,
         secondsPerUnit: newSecondsPerUnit,
+        coinsRemaining: updatedCoins,
+        newCoins: updatedCoins,
+        nextCost,
+        nextRechargeCost: nextCost,
       };
     });
 
@@ -1548,7 +1623,15 @@ apiRouter.post('/clicker/claim-daily-help', async (req: AuthenticatedRequest, re
         throw new Error('Помощь доступна только при балансе менее 500 Coins');
       }
 
-      const cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      let cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      if (cRes.rowCount === 0) {
+        cRes = await client.query(
+          `INSERT INTO user_clicker (user_id, power_level, recharge_level, current_energy, last_energy_updated_at, total_clicks)
+           VALUES ($1, 1, 1, 100, CURRENT_TIMESTAMP, 0)
+           RETURNING *`,
+          [user.id]
+        );
+      }
       const clicker = cRes.rows[0];
 
       if (clicker.last_daily_help_at) {
@@ -1571,7 +1654,9 @@ apiRouter.post('/clicker/claim-daily-help', async (req: AuthenticatedRequest, re
       );
 
       return {
+        addedCoins: DAILY_HELP_AMOUNT,
         coinsAdded: DAILY_HELP_AMOUNT,
+        totalCoins: updateRes.rows[0].coins,
         newCoins: updateRes.rows[0].coins,
       };
     });

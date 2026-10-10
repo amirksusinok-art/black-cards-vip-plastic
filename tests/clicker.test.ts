@@ -93,6 +93,18 @@ describe('Clicker System Engine Tests', () => {
     expect(CLICKER_CONFIG.rechargeSecondsPerUnit[1]).toBe(30);
     expect(CLICKER_CONFIG.rechargeSecondsPerUnit[5]).toBe(6);
   });
+
+  it('guarantees user_clicker table stores and reads energy and click state correctly', async () => {
+    const { initDatabase, query } = await import('../server/src/db.js');
+    await initDatabase();
+
+    const testUserId = 99999;
+    const res = await query('SELECT * FROM user_clicker WHERE user_id = $1', [testUserId]);
+    expect(res.rows.length).toBe(1);
+    expect(res.rows[0].current_energy).toBe(100);
+    expect(res.rows[0].power_level).toBe(1);
+    expect(res.rows[0].recharge_level).toBe(1);
+  });
 });
 
 describe('Case Tiers Integration Tests', () => {

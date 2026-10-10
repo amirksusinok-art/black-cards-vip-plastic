@@ -31,20 +31,13 @@ interface MockDB {
   user_settings: any[];
   avita_sessions: any[];
   avita_deals: any[];
+  user_clicker: any[];
 }
 
 const mockDbPath = path.resolve(process.cwd(), 'data_local_store.json');
 
 function loadMockData(): MockDB {
-  try {
-    if (fs.existsSync(mockDbPath)) {
-      return JSON.parse(fs.readFileSync(mockDbPath, 'utf8'));
-    }
-  } catch (err) {
-    console.warn('Failed to load local mock DB, resetting:', err);
-  }
-
-  return {
+  const defaultData: MockDB = {
     users: [],
     cards: [],
     card_templates: [],
@@ -78,6 +71,23 @@ function loadMockData(): MockDB {
     avita_deals: [],
     user_clicker: []
   };
+
+  try {
+    if (fs.existsSync(mockDbPath)) {
+      const parsed = JSON.parse(fs.readFileSync(mockDbPath, 'utf8'));
+      return {
+        ...defaultData,
+        ...parsed,
+        user_clicker: Array.isArray(parsed.user_clicker) ? parsed.user_clicker : [],
+        avita_sessions: Array.isArray(parsed.avita_sessions) ? parsed.avita_sessions : [],
+        avita_deals: Array.isArray(parsed.avita_deals) ? parsed.avita_deals : []
+      };
+    }
+  } catch (err) {
+    console.warn('Failed to load local mock DB, resetting:', err);
+  }
+
+  return defaultData;
 }
 
 let mockDB = loadMockData();
@@ -172,6 +182,10 @@ export async function withTransaction<T>(callback: (client: DBClient) => Promise
  * Mock Query Engine for Local Dev and Vitest tests
  */
 function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCount: number } {
+  if (!mockDB.user_clicker) mockDB.user_clicker = [];
+  if (!mockDB.avita_sessions) mockDB.avita_sessions = [];
+  if (!mockDB.avita_deals) mockDB.avita_deals = [];
+
   const trimmed = sql.trim().toUpperCase();
 
   // Normalize query

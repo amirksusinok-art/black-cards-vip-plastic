@@ -138,7 +138,7 @@ export const TopNav: React.FC<TopNavProps> = ({
       </div>
 
       {/* Bottom Row: Quick Navigation Bar with Highlighted Core Sections */}
-      <nav className="w-full flex items-center gap-1.5 px-3 sm:px-6 pt-1 pb-2.5 overflow-x-auto scrollbar-none">
+      <nav className="w-full flex items-center justify-start sm:justify-center gap-1.5 px-3 sm:px-6 pt-1 pb-2.5 overflow-x-auto scrollbar-none">
         {quickTabs.map((tab) => {
           const isActive = currentScreen === tab.id;
           return (

@@ -310,10 +310,10 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
   }, [pendingCard, pendingAutoSummary]);
 
   return (
-    <div className="w-full flex flex-col items-center justify-between min-h-[calc(100vh-70px)] px-4 py-4 max-w-md mx-auto select-none">
+    <div className="w-full flex flex-col items-center justify-center min-h-[calc(100vh-75px)] px-4 py-3 max-w-md mx-auto select-none gap-2">
       {/* Error or Warning Banner */}
       {errorMessage && (
-        <div className="w-full mb-3 p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-200 text-xs flex items-center justify-between animate-fadeIn">
+        <div className="w-full mb-2 p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-200 text-xs flex items-center justify-between animate-fadeIn">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
             <span>{errorMessage}</span>
@@ -330,7 +330,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
       )}
 
       {/* Central Luxury Card with On-Card Slot Reel Generation */}
-      <div className="w-full flex flex-col items-center my-auto py-2">
+      <div className="w-full flex flex-col items-center py-1">
         <CardPreview
           card={latestCard}
           targetCard={pendingCard}
@@ -368,7 +368,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
           );
 
           return (
-            <div className="h-9 mt-2 flex items-center justify-center shrink-0">
+            <div className="h-9 mt-1.5 flex items-center justify-center shrink-0">
               {isRolling ? (
                 <div className="flex items-center gap-4 text-xs font-mono">
                   <div className="flex items-center gap-1.5 text-emerald-400">
@@ -411,7 +411,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
       </div>
 
       {/* Mode & Timer Status Bar */}
-      <div className="w-full my-2.5 flex items-center justify-between px-3 py-2 rounded-xl bg-[#12151D] border border-white/5 text-xs font-mono">
+      <div className="w-full my-1.5 flex items-center justify-between px-3 py-2 rounded-xl bg-[#12151D] border border-white/5 text-xs font-mono">
         <div className="flex items-center gap-1.5">
           <span
             className={`w-2 h-2 rounded-full ${
@@ -436,16 +436,16 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
         )}
       </div>
 
-      {/* 5. Two Compact Panels (Bank & Material of last drop) */}
-      <div className="w-full grid grid-cols-2 gap-2 mb-3">
-        <div className="flex flex-col p-2.5 rounded-xl bg-[#12151D] border border-white/5">
+      {/* 5. Two Compact Panels (Bank & Material of last drop) - Perfectly Centered */}
+      <div className="w-full grid grid-cols-2 gap-2 mb-1.5">
+        <div className="flex flex-col items-center justify-center text-center p-2 rounded-xl bg-[#12151D] border border-white/5">
           <span className="text-[10px] text-white/40 uppercase font-mono">БАНК</span>
           <span className="text-xs font-bold text-white/90 truncate mt-0.5">
             {latestCard ? latestCard.bank : '—'}
           </span>
         </div>
 
-        <div className="flex flex-col p-2.5 rounded-xl bg-[#12151D] border border-white/5">
+        <div className="flex flex-col items-center justify-center text-center p-2 rounded-xl bg-[#12151D] border border-white/5">
           <span className="text-[10px] text-white/40 uppercase font-mono">МАТЕРИАЛ</span>
           <span className="text-xs font-bold text-white/90 truncate mt-0.5">
             {latestCard ? latestCard.material : '—'}

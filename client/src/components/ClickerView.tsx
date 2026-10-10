@@ -54,8 +54,11 @@ export const ClickerView: React.FC<ClickerViewProps> = ({ user, onRefreshUser })
     try {
       setIsLoading(true);
       const res = await api.getClickerState();
-      setClickerState(res.state);
-      setLocalEnergy(res.state.energy);
+      const state = res.state || (res as any);
+      if (state) {
+        setClickerState(state);
+        setLocalEnergy(typeof state.energy === 'number' ? state.energy : typeof state.currentEnergy === 'number' ? state.currentEnergy : 100);
+      }
     } catch (err: any) {
       setErrorMessage(err.message || 'Ошибка загрузки заработка');
     } finally {
@@ -90,23 +93,27 @@ export const ClickerView: React.FC<ClickerViewProps> = ({ user, onRefreshUser })
 
     try {
       const res = await api.clickerTap(count);
+      const newEnergy = typeof res.energy === 'number' ? res.energy : typeof (res as any).currentEnergy === 'number' ? (res as any).currentEnergy : localEnergy;
+      const newCoins = typeof res.coins === 'number' ? res.coins : typeof (res as any).userCoins === 'number' ? (res as any).userCoins : undefined;
+      const newTotal = typeof res.totalTaps === 'number' ? res.totalTaps : undefined;
+
       setClickerState((prev) =>
         prev
           ? {
               ...prev,
-              coins: res.coins,
-              energy: res.energy,
-              totalTaps: res.totalTaps,
+              ...(newCoins !== undefined ? { coins: newCoins } : {}),
+              energy: newEnergy,
+              ...(newTotal !== undefined ? { totalTaps: newTotal } : {}),
             }
           : null
       );
-      setLocalEnergy(res.energy);
+      setLocalEnergy(newEnergy);
       onRefreshUser();
     } catch (err: any) {
       // Re-fetch on error to sync with server truth
       fetchState();
     }
-  }, [fetchState, onRefreshUser]);
+  }, [fetchState, onRefreshUser, localEnergy]);
 
   // Handle Coin Tap
   const handleCoinTap = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {

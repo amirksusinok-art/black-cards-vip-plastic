@@ -428,12 +428,12 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
 
       {/* Bottom Area: 16-Digit Number (With Slot Reel) & Meta */}
       <div className="relative z-10 flex flex-col gap-1.5 sm:gap-2">
-        {/* Card Number Container */}
+        {/* Card Number Container - Always Centered (Both when Rolling and when Static) */}
         {isRolling ? (
-          /* On-Card 16-Digit Slot Reel with 3D Depth Cylinders */
+          /* On-Card 16-Digit Slot Reel with 3D Depth Cylinders (Centered) */
           <div
-            className={`flex items-center justify-between font-mono font-bold tracking-[0.14em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] overflow-hidden ${
-              isCompact ? 'h-5 text-xs' : 'h-7 text-lg sm:text-xl'
+            className={`w-full flex items-center justify-center font-mono font-bold tracking-[0.12em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] overflow-hidden ${
+              isCompact ? 'h-5 gap-1 text-xs' : 'h-7 gap-2 sm:gap-3 text-lg sm:text-xl'
             }`}
           >
             {[0, 1, 2, 3].map((blockIdx) => {
@@ -445,7 +445,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
               return (
                 <div
                   key={blockIdx}
-                  className={`flex gap-[1.5px] px-1 py-0.5 rounded-lg transition-all duration-300 ${
+                  className={`flex gap-[1px] sm:gap-[2px] px-1 py-0.5 rounded-lg transition-all duration-300 ${
                     isLocked
                       ? 'bg-amber-400/10 border border-amber-400/40 shadow-[0_0_8px_rgba(251,191,36,0.3)]'
                       : 'bg-black/30 border border-white/5'
@@ -466,8 +466,8 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
                       <div
                         key={dIdx}
                         className={`${
-                          isCompact ? 'w-[8px] h-5' : 'w-[11px] sm:w-[13px] h-7'
-                        } overflow-hidden relative flex flex-col items-center`}
+                          isCompact ? 'w-[9px] h-5' : 'w-[12px] sm:w-[15px] h-7'
+                        } overflow-hidden relative flex flex-col items-center justify-center`}
                         style={{
                           WebkitMaskImage:
                             'linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)',
@@ -489,7 +489,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
                           {digitStrip.map((num, i) => (
                             <div
                               key={i}
-                              className={`flex items-center justify-center font-mono font-bold text-white leading-none ${
+                              className={`flex items-center justify-center font-mono font-bold text-white text-center leading-none ${
                                 isCompact ? 'h-5 text-xs' : 'h-7 text-lg sm:text-xl'
                               }`}
                             >
@@ -505,13 +505,33 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
             })}
           </div>
         ) : (
-          /* Static Card Number (Guaranteed single line, never wraps!) */
+          /* Static Card Number - Perfectly Centered in 4 Identical Blocks */
           <div
-            className={`${
-              isCompact ? 'h-5 text-[11px] sm:text-xs tracking-wider' : 'h-7 text-lg sm:text-xl tracking-[0.16em]'
-            } flex items-center font-mono font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] whitespace-nowrap overflow-hidden`}
+            className={`w-full flex items-center justify-center font-mono font-bold tracking-[0.12em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] overflow-hidden ${
+              isCompact ? 'h-5 gap-1 text-xs' : 'h-7 gap-2 sm:gap-3 text-lg sm:text-xl'
+            }`}
           >
-            {targetCardNumber}
+            {[0, 1, 2, 3].map((blockIdx) => {
+              const cleanDigits = targetCardNumber.replace(/\s+/g, '');
+              const blockStr = cleanDigits.slice(blockIdx * 4, blockIdx * 4 + 4) || '0000';
+              return (
+                <div
+                  key={blockIdx}
+                  className="flex gap-[1px] sm:gap-[2px] px-1 py-0.5 rounded-lg bg-black/25 border border-white/5"
+                >
+                  {blockStr.split('').map((d, dIdx) => (
+                    <div
+                      key={dIdx}
+                      className={`${
+                        isCompact ? 'w-[9px] h-5 text-xs' : 'w-[12px] sm:w-[15px] h-7 text-lg sm:text-xl'
+                      } flex items-center justify-center font-mono font-bold text-white text-center leading-none`}
+                    >
+                      {d}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
 
