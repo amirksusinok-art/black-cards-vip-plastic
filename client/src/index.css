@@ -101,40 +101,46 @@ body {
   animation: float-fade 0.75s ease-out forwards;
 }
 
-/* Vertical Digit Fall / Slot Reel Animation (сверху вниз) */
+/* Vertical Digit Fall / Slot Reel Animation (сверху вниз, 60fps GPU accelerated) */
 @keyframes digitFall {
   0% {
-    transform: translateY(-80%);
+    transform: translate3d(0, -80%, 0);
     opacity: 0.6;
   }
   50% {
     opacity: 1;
   }
   100% {
-    transform: translateY(0%);
+    transform: translate3d(0, 0%, 0);
     opacity: 1;
   }
 }
 
 .animate-digitFall {
   animation: digitFall 0.08s ease-out;
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 @keyframes lockPop {
   0% {
-    transform: translateY(-60%) scale(1.15);
+    transform: translate3d(0, -60%, 0) scale3d(1.15, 1.15, 1);
     opacity: 0.8;
   }
   65% {
-    transform: translateY(4%) scale(1.04);
+    transform: translate3d(0, 4%, 0) scale3d(1.04, 1.04, 1);
   }
   100% {
-    transform: translateY(0%) scale(1);
+    transform: translate3d(0, 0%, 0) scale3d(1, 1, 1);
     opacity: 1;
   }
 }
 
 .animate-lockPop {
   animation: lockPop 0.26s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 

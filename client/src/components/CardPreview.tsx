@@ -117,26 +117,26 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
         setLockedBlocks(1);
         onLockedCountChangeRef.current?.(1);
         hapticImpact('light');
-      }, isFast ? 180 : 650);
+      }, isFast ? 140 : 420);
 
       const t2 = setTimeout(() => {
         setLockedBlocks(2);
         onLockedCountChangeRef.current?.(2);
         hapticImpact('light');
-      }, isFast ? 340 : 1250);
+      }, isFast ? 270 : 820);
 
       const t3 = setTimeout(() => {
         setLockedBlocks(3);
         onLockedCountChangeRef.current?.(3);
         hapticImpact('medium');
-      }, isFast ? 500 : 1750);
+      }, isFast ? 400 : 1220);
 
       const t4 = setTimeout(() => {
         setLockedBlocks(4);
         onLockedCountChangeRef.current?.(4);
         hapticImpact('heavy');
         onRollCompleteRef.current?.();
-      }, isFast ? 700 : 2300);
+      }, isFast ? 540 : 1580);
 
       return () => {
         clearTimeout(startTimer);

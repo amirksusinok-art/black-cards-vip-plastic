@@ -307,24 +307,46 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
   const handleReelComplete = useCallback(() => {
     if (pendingCard) {
       setLatestCard(pendingCard);
-      const isRare =
+      const isJackpot =
         ['Gold', 'Black Carbon', 'Titanium', 'Holographic'].includes(pendingCard.material) ||
+        (pendingCard.card_number && pendingCard.card_number.includes('7777')) ||
+        pendingCard.collection_code === '777' ||
         pendingCard.bank === 'ВБ Банк' ||
-        pendingCard.category !== 'Standard';
+        ['Quad', 'Mirror'].includes(pendingCard.category);
 
-      if (isRare) {
+      if (isJackpot) {
         setIsJackpotActive(true);
         playJackpotJingle();
         jackpotHaptics();
-        setTimeout(() => setIsJackpotActive(false), 850);
+        setTimeout(() => setIsJackpotActive(false), 1400);
 
         try {
+          // Golden salute fireworks
           confetti({
-            particleCount: 85,
-            spread: 85,
-            origin: { y: 0.6 },
-            colors: ['#D4AF37', '#00FFCC', '#E11D48', '#FFFFFF'],
+            particleCount: 110,
+            spread: 95,
+            origin: { y: 0.55 },
+            colors: ['#FFD700', '#F59E0B', '#D4AF37', '#FFFBEB', '#B8860B', '#FDE047'],
+            ticks: 180,
+            gravity: 1.1,
+            scalar: 1.25,
           });
+          setTimeout(() => {
+            confetti({
+              particleCount: 60,
+              angle: 60,
+              spread: 55,
+              origin: { x: 0.05, y: 0.6 },
+              colors: ['#FFD700', '#D4AF37', '#FFFFFF'],
+            });
+            confetti({
+              particleCount: 60,
+              angle: 120,
+              spread: 55,
+              origin: { x: 0.95, y: 0.6 },
+              colors: ['#FFD700', '#D4AF37', '#FFFFFF'],
+            });
+          }, 140);
         } catch (e) {
           console.warn('Confetti error:', e);
         }

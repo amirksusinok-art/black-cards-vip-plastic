@@ -27,6 +27,7 @@ import {
   calculateListingExpiry,
   isCardEligibleForListing,
 } from './marketEngine.js';
+import { sendTelegramNotification } from './bot.js';
 
 export const apiRouter = Router();
 
@@ -2876,6 +2877,34 @@ apiRouter.post('/market/buy', async (req: AuthenticatedRequest, res: Response) =
         coinsRemaining: updatedBuyer.rows[0]?.coins ?? (buyer.coins - listing.price),
       };
     });
+
+    // Notify seller via Telegram Bot in background
+    (async () => {
+      try {
+        const sellerUserRes = await query('SELECT telegram_id, username, first_name FROM users WHERE id = $1', [listing.seller_id]);
+        const cardRes = await query('SELECT * FROM cards WHERE id = $1', [listing.card_id]);
+        if (sellerUserRes.rowCount > 0 && sellerUserRes.rows[0]?.telegram_id && cardRes.rowCount > 0) {
+          const sellerTg = sellerUserRes.rows[0].telegram_id;
+          const soldCard = cardRes.rows[0];
+          const buyerHandle = buyer.username ? `@${buyer.username}` : (buyer.first_name || 'Игрок');
+          const cardSerial = soldCard.serial_number || `CD-${String(soldCard.id).padStart(6, '0')}`;
+
+          const messageText =
+            `🎉 <b>Ваша карта ${cardSerial} продана на Рынке!</b>\n\n` +
+            `👤 <b>Покупатель:</b> ${buyerHandle}\n` +
+            `💳 <b>Карта:</b> ${soldCard.bank} • ${soldCard.material}\n` +
+            `💰 <b>Зачислено:</b> <b>+${netPayout.toLocaleString('ru-RU')} ₽</b> <i>(комиссия биржи 3%)</i>\n\n` +
+            `Монеты уже на вашем балансе. Откройте CardDrop!`;
+
+          const botUrl = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || 'https://t.me/thecardgamedrop_bot';
+          await sendTelegramNotification(sellerTg, messageText, {
+            inline_keyboard: [[{ text: '🎮 Открыть CardDrop', url: botUrl }]],
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to send market deal notification to seller:', err);
+      }
+    })();
 
     res.json({
       success: true,

@@ -2,6 +2,34 @@ import express from 'express';
 import { query, withTransaction } from './db.js';
 
 /**
+ * Helper to send external Telegram notifications (e.g. Market deals, rewards)
+ */
+export async function sendTelegramNotification(
+  chatId: number | string,
+  text: string,
+  replyMarkup?: any
+): Promise<boolean> {
+  const token = process.env.BOT_TOKEN;
+  if (!token) return false;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: 'HTML',
+        reply_markup: replyMarkup,
+      }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('[Telegram Bot] Notification dispatch failed:', err);
+    return false;
+  }
+}
+
+/**
  * Telegram Bot integration:
  * - /start command with WebApp launch button
  * - pre_checkout_query answering for Telegram Stars
@@ -20,20 +48,7 @@ export function setupTelegramBot(app: express.Express) {
 
   // Helper to send messages via Telegram Bot API
   async function sendMessage(chatId: number | string, text: string, replyMarkup?: any) {
-    try {
-      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: 'HTML',
-          reply_markup: replyMarkup,
-        }),
-      });
-    } catch (err) {
-      console.error('[Telegram Bot] Error sending message:', err);
-    }
+    return sendTelegramNotification(chatId, text, replyMarkup);
   }
 
   // Helper to answer pre_checkout_query (Mandatory for Telegram Stars!)
