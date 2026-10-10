@@ -16,8 +16,10 @@ describe('Game Engine Probabilities and Validation', () => {
   it('Bank probabilities sum exactly to 100%', () => {
     const sum = BANKS.reduce((acc, b) => acc + b.weight, 0);
     expect(sum).toBe(100);
-    expect(BANKS.length).toBe(5);
-    BANKS.forEach((b) => expect(b.weight).toBe(20));
+    expect(BANKS.length).toBe(6);
+    const wb = BANKS.find((b) => b.name === 'ВБ Банк');
+    expect(wb).toBeDefined();
+    expect(wb?.weight).toBe(5);
   });
 
   it('Standard Roll Material probabilities sum exactly to 100%', () => {

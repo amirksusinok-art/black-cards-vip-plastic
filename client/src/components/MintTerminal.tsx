@@ -4,7 +4,7 @@ import { CardPreview } from './CardPreview.js';
 import { api } from '../utils/api.js';
 import { hapticImpact, hapticNotification } from '../utils/telegram.js';
 import confetti from 'canvas-confetti';
-import { Play, RotateCw, AlertTriangle, Sparkles, SlidersHorizontal, X, FastForward } from 'lucide-react';
+import { Play, RotateCw, AlertTriangle, Sparkles, SlidersHorizontal, X, FastForward, TrendingUp } from 'lucide-react';
 
 interface MintTerminalProps {
   user: UserProfile | null;
@@ -20,7 +20,37 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
   const [latestCard, setLatestCard] = useState<Card | null>(null);
   const [isRolling, setIsRolling] = useState(false);
   const [pendingCard, setPendingCard] = useState<Card | null>(null);
+  const [lockedBlockCount, setLockedBlockCount] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Helper to calculate card market valuation
+  const getEstimatedCardPrice = (c: Card | null): number => {
+    if (!c) return 160;
+    if (c.is_free_roll) return 0;
+    const materialBase: Record<string, number> = {
+      'Classic Plastic': 70,
+      'Matte Plastic': 130,
+      'Gold': 1800,
+      'Black Carbon': 3600,
+      'Titanium': 9000,
+      'Holographic': 18000,
+    };
+    const categoryBonus: Record<string, number> = {
+      'Standard': 0,
+      'Pair': 100,
+      'Triple': 250,
+      'Repeater': 400,
+      'Straight': 800,
+      'Quad': 2000,
+      'Mirror': 12000,
+    };
+    const isHighTier = ['Titanium', 'Holographic'].includes(c.material);
+    const mult = isHighTier ? 30 : ['Gold', 'Black Carbon'].includes(c.material) ? 15 : 2;
+    const scoreBonus = Math.round((c.collector_score || 25) * mult);
+    const bankBonus = c.bank === 'ВБ Банк' ? 300 : 0;
+    const base = (materialBase[c.material] || 70) + (categoryBonus[c.category] || 0) + scoreBonus + bankBonus;
+    return Math.max(Math.round((base * 1.3) / 10) * 10, 80);
+  };
 
   // Free roll cooldown timer
   const [cooldown, setCooldown] = useState(user?.freeRollCooldownSeconds || 0);
@@ -64,6 +94,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
     }
 
     setErrorMessage(null);
+    setLockedBlockCount(0);
     setIsRolling(true);
     hapticImpact('heavy');
 
@@ -95,6 +126,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
     }
 
     setErrorMessage(null);
+    setLockedBlockCount(0);
     setIsRolling(true);
     hapticImpact('heavy');
 
@@ -201,6 +233,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
           targetCard={pendingCard}
           isRolling={isRolling && !!pendingCard}
           onRollComplete={handleReelComplete}
+          onLockedCountChange={(count) => setLockedBlockCount(count)}
           interactive={!isRolling}
           onClick={() => {
             if (isRolling) {
@@ -211,27 +244,64 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
           }}
         />
 
-        {/* Stable Fixed-Height Action Slot below card to lock card dimensions */}
-        <div className="h-10 mt-2 flex items-center justify-center shrink-0">
-          {isRolling ? (
-            <button
-              onClick={handleReelComplete}
-              className="text-xs font-mono text-amber-400/90 hover:text-amber-300 bg-white/5 border border-white/10 px-3.5 py-1.5 rounded-full flex items-center gap-1.5 active:scale-95 transition-all shadow-sm"
-            >
-              <FastForward className="w-3.5 h-3.5 text-amber-400" />
-              <span>Пропустить анимацию</span>
-            </button>
-          ) : latestCard ? (
-            <p className="text-[11px] text-white/40 font-mono flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-400/70" />
-              Нажмите на карту для подробного просмотра
-            </p>
-          ) : (
-            <p className="text-[11px] text-white/30 font-mono flex items-center gap-1">
-              Нажмите «Выпустить карту» для начала
-            </p>
-          )}
-        </div>
+        {/* Stable Fixed-Height Action Slot below card with Live Valuation Ticker */}
+        {(() => {
+          const targetEstimatedPrice = getEstimatedCardPrice(pendingCard);
+          const currentTickPrice = Math.max(
+            30,
+            Math.round(
+              targetEstimatedPrice *
+                (lockedBlockCount === 0
+                  ? 0.25
+                  : lockedBlockCount === 1
+                  ? 0.5
+                  : lockedBlockCount === 2
+                  ? 0.75
+                  : lockedBlockCount === 3
+                  ? 0.9
+                  : 1)
+            )
+          );
+
+          return (
+            <div className="h-10 mt-2 flex items-center justify-center shrink-0">
+              {isRolling ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.35)] animate-pulse">
+                    <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-[11px] font-mono font-medium text-white/90">
+                      Оценка:{' '}
+                      <strong className="text-emerald-300 font-mono text-xs font-black">
+                        +{currentTickPrice.toLocaleString('ru-RU')} ₽
+                      </strong>
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleReelComplete}
+                    className="text-[11px] font-mono text-amber-400/90 hover:text-amber-300 bg-white/5 border border-white/10 px-2.5 py-1 rounded-full flex items-center gap-1 active:scale-95 transition-all shadow-sm"
+                  >
+                    <FastForward className="w-3 h-3 text-amber-400" />
+                    <span>Пропустить</span>
+                  </button>
+                </div>
+              ) : latestCard ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-bold">
+                    Оценка: ~{getEstimatedCardPrice(latestCard).toLocaleString('ru-RU')} ₽
+                  </span>
+                  <p className="text-[11px] text-white/40 font-mono flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-amber-400/70" />
+                    Нажмите для просмотра
+                  </p>
+                </div>
+              ) : (
+                <p className="text-[11px] text-white/30 font-mono flex items-center gap-1">
+                  Нажмите «Выпустить карту» для начала
+                </p>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Mode & Timer Status Bar */}

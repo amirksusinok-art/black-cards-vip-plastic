@@ -113,6 +113,7 @@ export const CollectionView: React.FC<CollectionViewProps> = ({
           <option value="ОзановБанк">ОзановБанк</option>
           <option value="Тинькоффи">Тинькоффи</option>
           <option value="ОООтмыв Банк">ОООтмыв Банк</option>
+          <option value="ВБ Банк">ВБ Банк</option>
         </select>
 
         <select

@@ -1,6 +1,12 @@
 import crypto from 'crypto';
 
-export type BankName = 'Алфа Банк' | 'ЗверьБанк' | 'ОзановБанк' | 'Тинькоффи' | 'ОООтмыв Банк';
+export type BankName =
+  | 'Алфа Банк'
+  | 'ЗверьБанк'
+  | 'ОзановБанк'
+  | 'Тинькоффи'
+  | 'ОООтмыв Банк'
+  | 'ВБ Банк';
 
 export type MaterialName =
   | 'Classic Plastic'
@@ -30,13 +36,14 @@ export interface GeneratedCard {
   templateKey: string;
 }
 
-// 5 Banks: 20% each
+// 6 Banks: WB Bank at 5%, remaining 5 banks at 19% each (Sum = 100%)
 export const BANKS: { name: BankName; weight: number }[] = [
-  { name: 'Алфа Банк', weight: 20 },
-  { name: 'ЗверьБанк', weight: 20 },
-  { name: 'ОзановБанк', weight: 20 },
-  { name: 'Тинькоффи', weight: 20 },
-  { name: 'ОООтмыв Банк', weight: 20 },
+  { name: 'Алфа Банк', weight: 19 },
+  { name: 'ЗверьБанк', weight: 19 },
+  { name: 'ОзановБанк', weight: 19 },
+  { name: 'Тинькоффи', weight: 19 },
+  { name: 'ОООтмыв Банк', weight: 19 },
+  { name: 'ВБ Банк', weight: 5 },
 ];
 
 // Standard roll materials (Sum = 100%)

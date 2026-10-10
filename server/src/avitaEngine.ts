@@ -130,6 +130,9 @@ export function generateInitialGreeting(cards: any[], initialOffer: number): str
     if (card.material === 'Holographic') {
       return `Ого, ${card.material} с узором ${card.category}? Карта редкая и интересная. Предложу ${formatted} ₽. Но учти: такие вещи я оцениваю осторожно.`;
     }
+    if (card.bank === 'ВБ Банк') {
+      return `Ого, редчайший ${card.bank}! Фирменная ягодная карта с 5% шансом выпадения. Могу предложить ${formatted} ₽.`;
+    }
     if (['Gold', 'Titanium', 'Black Carbon'].includes(card.material)) {
       return `Любопытный экземпляр: ${card.bank}, благородный ${card.material}. Могу предложить ${formatted} ₽. Соглашайся, пока предложение действует.`;
     }

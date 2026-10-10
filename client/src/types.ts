@@ -1,4 +1,4 @@
-export type BankName = 'Алфа Банк' | 'ЗверьБанк' | 'ОзановБанк' | 'Тинькоффи' | 'ОООтмыв Банк';
+export type BankName = 'Алфа Банк' | 'ЗверьБанк' | 'ОзановБанк' | 'Тинькоффи' | 'ОООтмыв Банк' | 'ВБ Банк';
 
 export type MaterialName =
   | 'Classic Plastic'
