@@ -12,6 +12,7 @@ import { StarsShopView } from './components/StarsShopView.js';
 import { ProfileView } from './components/ProfileView.js';
 import { ClickerView } from './components/ClickerView.js';
 import { NavigationMenu, NavScreen } from './components/NavigationMenu.js';
+import { MarketView } from './components/MarketView.js';
 import { CardDetailModal } from './components/CardDetailModal.js';
 import { RulesModal } from './components/RulesModal.js';
 import { PrivacyModal } from './components/PrivacyModal.js';
@@ -148,6 +149,14 @@ export const App: React.FC = () => {
           />
         )}
 
+        {currentScreen === 'market' && (
+          <MarketView
+            user={user}
+            onRefreshUser={loadUserData}
+            onOpenCardDetails={(card) => setSelectedCard(card)}
+          />
+        )}
+
         {currentScreen === 'leaderboard' && (
           <LeaderboardView
             onOpenCardDetails={(card) => setSelectedCard(card)}
@@ -164,6 +173,7 @@ export const App: React.FC = () => {
           <ProfileView
             user={user}
             onOpenCardDetails={(card) => setSelectedCard(card)}
+            onRefreshProfile={loadUserData}
           />
         )}
       </main>

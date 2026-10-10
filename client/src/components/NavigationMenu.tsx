@@ -24,6 +24,7 @@ export type NavScreen =
   | 'mint'
   | 'collection'
   | 'avita'
+  | 'market'
   | 'earn'
   | 'leaderboard'
   | 'albums'
@@ -74,6 +75,16 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({
       accentText: 'text-emerald-400',
     },
     {
+      id: 'market',
+      title: 'Рынок P2P',
+      subtitle: 'Биржа карт • Торговля между игроками',
+      badge: 'БИРЖА',
+      icon: <ShoppingBag className="w-5 h-5 text-purple-400" />,
+      glowBorder: 'border-purple-500/40 hover:border-purple-400 shadow-purple-950/30',
+      bgGradient: 'from-purple-950/40 via-[#181524] to-[#10121A]',
+      accentText: 'text-purple-400',
+    },
+    {
       id: 'earn',
       title: 'Заработок ₽ (Кликер)',
       subtitle: '3D монета рубля • Энергия и прокачка',
@@ -87,7 +98,7 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({
       id: 'avita',
       title: '«Авита» (Скупщик)',
       subtitle: 'Продажа карт за рубли • Торг',
-      badge: 'РЫНОК',
+      badge: 'СКУПЩИК',
       icon: <Store className="w-5 h-5 text-amber-400" />,
       glowBorder: 'border-amber-500/40 hover:border-amber-400 shadow-amber-950/30',
       bgGradient: 'from-amber-950/40 via-[#161720] to-[#10121A]',

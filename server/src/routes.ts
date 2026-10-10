@@ -19,6 +19,14 @@ import {
   calculateCurrentEnergy,
   validateTapBatch,
 } from './clickerEngine.js';
+import {
+  MARKET_FEE_PERCENT,
+  LISTING_DURATION_DAYS,
+  calculateMarketFee,
+  calculateRecommendedPrice,
+  calculateListingExpiry,
+  isCardEligibleForListing,
+} from './marketEngine.js';
 
 export const apiRouter = Router();
 
@@ -43,7 +51,7 @@ async function getOrCreateUser(telegramUser: any) {
   if (userRes.rowCount === 0) {
     userRes = await query(
       `INSERT INTO users (telegram_id, username, first_name, last_name, photo_url, coins, level, exp)
-       VALUES ($1, $2, $3, $4, $5, 1500, 1, 0)
+       VALUES ($1, $2, $3, $4, $5, 5000, 1, 0)
        RETURNING *`,
       [
         telegramUser.id,
@@ -1108,6 +1116,15 @@ apiRouter.post('/avita/quote', async (req: AuthenticatedRequest, res: Response) 
       return res.status(400).json({
         success: false,
         error: 'Эту карту я не покупаю. Она получена в бесплатном режиме и не предназначена для продажи.',
+      });
+    }
+
+    // 3.1 Market Listing Check
+    const hasListedOnMarket = cards.some((c: any) => c.is_listed_on_market);
+    if (hasListedOnMarket) {
+      return res.status(400).json({
+        success: false,
+        error: 'Одна или несколько карт выставлены на продажу на Рынке. Снимите их с продажи перед сдачей скупщику.',
       });
     }
 
@@ -2508,5 +2525,640 @@ apiRouter.get('/admin/stats', adminMiddleware, async (req: AuthenticatedRequest,
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// ==========================================
+// 🛒 P2P MARKETPLACE ROUTES
+// ==========================================
+
+// GET /api/market/listings — Browse active listings with filters
+apiRouter.get('/market/listings', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const page = Math.max(parseInt((req.query.page as string) || '1', 10), 1);
+    const limit = Math.min(parseInt((req.query.limit as string) || '40', 10), 100);
+    const search = ((req.query.search as string) || '').trim().toLowerCase();
+    const bank = req.query.bank as string | undefined;
+    const material = req.query.material as string | undefined;
+    const category = req.query.category as string | undefined;
+    const minPrice = parseInt((req.query.minPrice as string) || '0', 10);
+    const maxPrice = parseInt((req.query.maxPrice as string) || '0', 10);
+    const sortBy = (req.query.sortBy as string) || 'newest';
+
+    const listingsRes = await query(`
+      SELECT ml.*, 
+             c.card_number, c.bank, c.material, c.category, c.collector_score, c.serial_number, c.collection_code,
+             u.username as seller_username, u.photo_url as seller_photo, u.prefix as seller_prefix
+      FROM market_listings ml
+      JOIN cards c ON ml.card_id = c.id
+      JOIN users u ON ml.seller_id = u.id
+      WHERE ml.status = 'active' AND ml.expires_at > CURRENT_TIMESTAMP
+      ORDER BY ml.created_at DESC
+    `);
+
+    let items = listingsRes.rows;
+
+    // Apply in-memory filtering (consistent across mock and postgres)
+    if (search) {
+      items = items.filter(
+        (i: any) =>
+          (i.card_number && i.card_number.toLowerCase().includes(search)) ||
+          (i.serial_number && i.serial_number.toLowerCase().includes(search)) ||
+          (i.seller_username && i.seller_username.toLowerCase().includes(search))
+      );
+    }
+    if (bank) {
+      items = items.filter((i: any) => i.bank === bank);
+    }
+    if (material) {
+      items = items.filter((i: any) => i.material === material);
+    }
+    if (category) {
+      items = items.filter((i: any) => i.category === category);
+    }
+    if (minPrice > 0) {
+      items = items.filter((i: any) => i.price >= minPrice);
+    }
+    if (maxPrice > 0) {
+      items = items.filter((i: any) => i.price <= maxPrice);
+    }
+
+    // Sort
+    if (sortBy === 'price_asc') {
+      items.sort((a: any, b: any) => a.price - b.price);
+    } else if (sortBy === 'price_desc') {
+      items.sort((a: any, b: any) => b.price - a.price);
+    } else if (sortBy === 'score_desc') {
+      items.sort((a: any, b: any) => (b.collector_score || 0) - (a.collector_score || 0));
+    } else {
+      // newest
+      items.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+
+    const total = items.length;
+    const startIndex = (page - 1) * limit;
+    const paginated = items.slice(startIndex, startIndex + limit);
+
+    res.json({
+      success: true,
+      listings: paginated,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/market/my-listings — Current user's market listings
+apiRouter.get('/market/my-listings', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const listingsRes = await query(
+      `SELECT ml.*, 
+              c.card_number, c.bank, c.material, c.category, c.collector_score, c.serial_number, c.collection_code
+       FROM market_listings ml
+       JOIN cards c ON ml.card_id = c.id
+       WHERE ml.seller_id = $1
+       ORDER BY ml.created_at DESC`,
+      [user.id]
+    );
+
+    res.json({
+      success: true,
+      listings: listingsRes.rows,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/market/history — Global recent successful deals
+apiRouter.get('/market/history', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const dealsRes = await query(`
+      SELECT mdh.*, 
+             c.bank as card_bank, c.material as card_material, c.category as card_category, c.serial_number as card_serial,
+             s.username as seller_username, s.prefix as seller_prefix,
+             b.username as buyer_username, b.prefix as buyer_prefix
+      FROM market_deals_history mdh
+      LEFT JOIN cards c ON mdh.card_id = c.id
+      LEFT JOIN users s ON mdh.seller_id = s.id
+      LEFT JOIN users b ON mdh.buyer_id = b.id
+      ORDER BY mdh.created_at DESC
+      LIMIT 50
+    `);
+
+    res.json({
+      success: true,
+      deals: dealsRes.rows,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/market/estimate/:cardId — Price recommendation and fee preview for user's card
+apiRouter.get('/market/estimate/:cardId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const cardId = parseInt(req.params.cardId, 10);
+    if (isNaN(cardId)) {
+      return res.status(400).json({ success: false, error: 'Некорректный ID карты' });
+    }
+
+    const cardRes = await query('SELECT * FROM cards WHERE id = $1 AND user_id = $2', [cardId, user.id]);
+    if (cardRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Карта не найдена в вашей коллекции' });
+    }
+
+    const card = cardRes.rows[0];
+    const eligibility = isCardEligibleForListing(card);
+
+    // Fetch recent deals of similar card
+    const dealsRes = await query('SELECT * FROM market_deals_history ORDER BY created_at DESC LIMIT 100');
+    const estimate = calculateRecommendedPrice(card, dealsRes.rows);
+
+    res.json({
+      success: true,
+      card,
+      estimate,
+      feePercent: MARKET_FEE_PERCENT,
+      listingDurationDays: LISTING_DURATION_DAYS,
+      eligibility,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/market/seller/:userId — Public profile of seller
+apiRouter.get('/market/seller/:userId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const targetId = parseInt(req.params.userId, 10);
+    const userRes = await query('SELECT id, username, first_name, photo_url, prefix, level, created_at FROM users WHERE id = $1', [targetId]);
+    if (userRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Продавец не найден' });
+    }
+
+    const seller = userRes.rows[0];
+    const listingsRes = await query("SELECT COUNT(*) as count FROM market_listings WHERE seller_id = $1 AND status = 'active'", [targetId]);
+    const dealsRes = await query('SELECT COUNT(*) as count FROM market_deals_history WHERE seller_id = $1', [targetId]);
+
+    res.json({
+      success: true,
+      seller: {
+        id: seller.id,
+        username: seller.username,
+        firstName: seller.first_name,
+        photoUrl: seller.photo_url,
+        prefix: seller.prefix,
+        level: seller.level,
+        activeListingsCount: Number(listingsRes.rows[0]?.count || 0),
+        completedSalesCount: Number(dealsRes.rows[0]?.count || 0),
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/market/list — List card for sale on P2P marketplace
+apiRouter.post('/market/list', async (req: AuthenticatedRequest, res: Response) => {
+  const { cardId, price } = req.body;
+  const numCardId = parseInt(cardId, 10);
+  const numPrice = parseInt(price, 10);
+
+  if (isNaN(numCardId)) {
+    return res.status(400).json({ success: false, error: 'Укажите карту для продажи' });
+  }
+  if (isNaN(numPrice) || numPrice < 50 || numPrice > 100000000) {
+    return res.status(400).json({ success: false, error: 'Цена должна быть от 50 до 100 000 000 ₽' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    const cardRes = await query('SELECT * FROM cards WHERE id = $1 AND user_id = $2', [numCardId, user.id]);
+    if (cardRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Карта не найдена в вашей коллекции' });
+    }
+
+    const card = cardRes.rows[0];
+    const eligibility = isCardEligibleForListing(card);
+    if (!eligibility.eligible) {
+      return res.status(400).json({ success: false, error: eligibility.reason });
+    }
+
+    // Check if card is currently in active negotiation with Avita
+    const avitaRes = await query("SELECT * FROM avita_sessions WHERE user_id = $1 AND status = 'active'", [user.id]);
+    if (avitaRes.rowCount > 0) {
+      const activeSession = avitaRes.rows[0];
+      const sessionCardIds = Array.isArray(activeSession.card_ids) ? activeSession.card_ids : [];
+      if (sessionCardIds.includes(numCardId)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Карта сейчас участвует в торгах со скупщиком Авита. Завершите или отмените сделку с Авита.',
+        });
+      }
+    }
+
+    const expiresAt = calculateListingExpiry(LISTING_DURATION_DAYS).toISOString();
+
+    const result = await withTransaction(async (client) => {
+      // 1. Mark card as listed on market
+      await client.query('UPDATE cards SET is_listed_on_market = true WHERE id = $1', [numCardId]);
+
+      // 2. Insert into market_listings
+      const listingRes = await client.query(
+        `INSERT INTO market_listings (seller_id, card_id, price, fee_percent, status, expires_at)
+         VALUES ($1, $2, $3, $4, 'active', $5)
+         RETURNING *`,
+        [user.id, numCardId, numPrice, MARKET_FEE_PERCENT, expiresAt]
+      );
+
+      return listingRes.rows[0];
+    });
+
+    res.json({
+      success: true,
+      listing: result,
+      feeInfo: calculateMarketFee(numPrice),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/market/buy — Buy listed card atomically
+apiRouter.post('/market/buy', async (req: AuthenticatedRequest, res: Response) => {
+  const { listingId } = req.body;
+  const numListingId = parseInt(listingId, 10);
+  if (isNaN(numListingId)) {
+    return res.status(400).json({ success: false, error: 'Укажите ID объявления' });
+  }
+
+  try {
+    const buyer = await getOrCreateUser(req.telegramUser);
+
+    const listingRes = await query('SELECT * FROM market_listings WHERE id = $1', [numListingId]);
+    if (listingRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Объявление не найдено' });
+    }
+
+    const listing = listingRes.rows[0];
+    if (listing.status !== 'active') {
+      return res.status(400).json({ success: false, error: 'Этот лот уже продан или снят с продажи' });
+    }
+    if (new Date(listing.expires_at).getTime() <= Date.now()) {
+      return res.status(400).json({ success: false, error: 'Срок размещения этого лота истёк' });
+    }
+    if (listing.seller_id === buyer.id) {
+      return res.status(400).json({ success: false, error: 'Вы не можете купить собственную карту' });
+    }
+    if (buyer.coins < listing.price) {
+      return res.status(400).json({
+        success: false,
+        error: `Недостаточно средств. Цена: ${listing.price.toLocaleString('ru-RU')} ₽, у вас: ${buyer.coins.toLocaleString('ru-RU')} ₽`,
+      });
+    }
+
+    const { feeCoins, netPayout } = calculateMarketFee(listing.price);
+
+    const transactionResult = await withTransaction(async (client) => {
+      // 1. Deduct coins from buyer
+      await client.query('UPDATE users SET coins = coins - $1 WHERE id = $2', [listing.price, buyer.id]);
+
+      // 2. Credit netPayout to seller
+      await client.query('UPDATE users SET coins = coins + $1 WHERE id = $2', [netPayout, listing.seller_id]);
+
+      // 3. Transfer card ownership to buyer and unmark is_listed_on_market
+      await client.query('UPDATE cards SET user_id = $1, is_listed_on_market = false WHERE id = $2', [
+        buyer.id,
+        listing.card_id,
+      ]);
+
+      // 4. Mark listing as sold
+      const nowIso = new Date().toISOString();
+      await client.query(
+        "UPDATE market_listings SET status = 'sold', buyer_id = $1, sold_at = $2 WHERE id = $3",
+        [buyer.id, nowIso, listing.id]
+      );
+
+      // 5. Insert record into market_deals_history
+      await client.query(
+        `INSERT INTO market_deals_history (listing_id, card_id, seller_id, buyer_id, price, fee_coins, net_payout)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [listing.id, listing.card_id, listing.seller_id, buyer.id, listing.price, feeCoins, netPayout]
+      );
+
+      // Fetch buyer updated balance
+      const updatedBuyer = await client.query('SELECT coins FROM users WHERE id = $1', [buyer.id]);
+      return {
+        coinsRemaining: updatedBuyer.rows[0]?.coins ?? (buyer.coins - listing.price),
+      };
+    });
+
+    res.json({
+      success: true,
+      listingId: listing.id,
+      cardId: listing.card_id,
+      price: listing.price,
+      feeCoins,
+      netPayout,
+      coinsRemaining: transactionResult.coinsRemaining,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/market/cancel — Cancel active listing
+apiRouter.post('/market/cancel', async (req: AuthenticatedRequest, res: Response) => {
+  const { listingId } = req.body;
+  const numListingId = parseInt(listingId, 10);
+  if (isNaN(numListingId)) {
+    return res.status(400).json({ success: false, error: 'Укажите ID объявления' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    const listingRes = await query('SELECT * FROM market_listings WHERE id = $1 AND seller_id = $2', [
+      numListingId,
+      user.id,
+    ]);
+    if (listingRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Объявление не найдено или принадлежит другому игроку' });
+    }
+
+    const listing = listingRes.rows[0];
+    if (listing.status !== 'active') {
+      return res.status(400).json({ success: false, error: 'Это объявление уже не активно' });
+    }
+
+    await withTransaction(async (client) => {
+      await client.query("UPDATE market_listings SET status = 'cancelled' WHERE id = $1", [listing.id]);
+      await client.query('UPDATE cards SET is_listed_on_market = false WHERE id = $1', [listing.card_id]);
+    });
+
+    res.json({
+      success: true,
+      message: 'Объявление успешно снято с продажи. Карта возвращена в коллекцию.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/market/update-price — Change price of active listing
+apiRouter.post('/market/update-price', async (req: AuthenticatedRequest, res: Response) => {
+  const { listingId, newPrice } = req.body;
+  const numListingId = parseInt(listingId, 10);
+  const priceNum = parseInt(newPrice, 10);
+
+  if (isNaN(numListingId) || isNaN(priceNum) || priceNum < 50 || priceNum > 100000000) {
+    return res.status(400).json({ success: false, error: 'Укажите корректную цену (от 50 до 100 000 000 ₽)' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const listingRes = await query('SELECT * FROM market_listings WHERE id = $1 AND seller_id = $2', [
+      numListingId,
+      user.id,
+    ]);
+    if (listingRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Объявление не найдено' });
+    }
+
+    const listing = listingRes.rows[0];
+    if (listing.status !== 'active') {
+      return res.status(400).json({ success: false, error: 'Можно изменить цену только у активного объявления' });
+    }
+
+    await query('UPDATE market_listings SET price = $1 WHERE id = $2', [priceNum, listing.id]);
+
+    res.json({
+      success: true,
+      listingId: listing.id,
+      newPrice: priceNum,
+      feeInfo: calculateMarketFee(priceNum),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/market/extend — Extend active listing duration by 7 days
+apiRouter.post('/market/extend', async (req: AuthenticatedRequest, res: Response) => {
+  const { listingId } = req.body;
+  const numListingId = parseInt(listingId, 10);
+  if (isNaN(numListingId)) {
+    return res.status(400).json({ success: false, error: 'Укажите ID объявления' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const listingRes = await query('SELECT * FROM market_listings WHERE id = $1 AND seller_id = $2', [
+      numListingId,
+      user.id,
+    ]);
+    if (listingRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Объявление не найдено' });
+    }
+
+    const listing = listingRes.rows[0];
+    if (listing.status !== 'active') {
+      return res.status(400).json({ success: false, error: 'Продлить можно только активное объявление' });
+    }
+
+    const newExpiry = calculateListingExpiry(LISTING_DURATION_DAYS).toISOString();
+    await query('UPDATE market_listings SET expires_at = $1 WHERE id = $2', [newExpiry, listing.id]);
+
+    res.json({
+      success: true,
+      listingId: listing.id,
+      expiresAt: newExpiry,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// 🎁 PROMO CODES ROUTES
+// ==========================================
+
+// POST /api/promo/redeem — Redeem a promo code
+apiRouter.post('/promo/redeem', async (req: AuthenticatedRequest, res: Response) => {
+  const { code } = req.body;
+  const rawCode = String(code || '').trim().toUpperCase();
+
+  if (!rawCode || rawCode.length < 2) {
+    return res.status(400).json({ success: false, error: 'Введите промокод' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    // 1. Find promo code
+    const promoRes = await query('SELECT * FROM promo_codes WHERE UPPER(code) = $1 AND is_active = true', [rawCode]);
+    if (promoRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Промокод не найден или неактивен' });
+    }
+
+    const promo = promoRes.rows[0];
+
+    // 2. Check expiration
+    if (promo.expires_at && new Date(promo.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({ success: false, error: 'Срок действия промокода истёк' });
+    }
+
+    // 3. Check max uses
+    if (promo.max_uses > 0 && promo.uses_count >= promo.max_uses) {
+      return res.status(400).json({ success: false, error: 'Лимит активаций этого промокода исчерпан' });
+    }
+
+    // 4. Check if user already activated
+    const actRes = await query(
+      'SELECT * FROM user_promo_activations WHERE user_id = $1 AND promo_id = $2',
+      [user.id, promo.id]
+    );
+    if (actRes.rowCount > 0) {
+      return res.status(400).json({ success: false, error: 'Вы уже активировали этот промокод' });
+    }
+
+    // 5. Grant reward
+    let rewardMessage = '';
+    let updatedCoins = user.coins;
+
+    await withTransaction(async (client) => {
+      if (promo.reward_type === 'coins') {
+        const amount = Math.max(1, parseInt(promo.reward_value, 10) || 1000);
+        await client.query('UPDATE users SET coins = coins + $1 WHERE id = $2', [amount, user.id]);
+        updatedCoins = user.coins + amount;
+        rewardMessage = `Вам начислено +${amount.toLocaleString('ru-RU')} ₽!`;
+      } else if (promo.reward_type === 'cosmetic') {
+        // Unlock cosmetic item
+        const itemRes = await client.query('SELECT * FROM cosmetic_items WHERE item_key = $1', [promo.reward_value]);
+        if (itemRes.rowCount > 0) {
+          const item = itemRes.rows[0];
+          await client.query(
+            'INSERT INTO user_cosmetics (user_id, item_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [user.id, item.id]
+          );
+          rewardMessage = `Вам разблокирован предмет оформления: ${item.name}!`;
+        } else {
+          // Fallback reward in coins
+          await client.query('UPDATE users SET coins = coins + 2000 WHERE id = $1', [user.id]);
+          updatedCoins = user.coins + 2000;
+          rewardMessage = 'Вам начислено +2 000 ₽!';
+        }
+      } else if (promo.reward_type === 'card') {
+        // Generate and grant exclusive card
+        const cardTier = promo.reward_value === 'gold' ? 'Gold' : 'Titanium';
+        const newCard = generateCard('ВБ Банк', cardTier as MaterialName, 'Triple');
+        await client.query(
+          `INSERT INTO cards (card_uid, user_id, bank, material, category, card_number, collection_code, expires_at, collector_score, is_free_roll, serial_number)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, $10)`,
+          [
+            newCard.cardUid,
+            user.id,
+            newCard.bank,
+            newCard.material,
+            newCard.category,
+            newCard.cardNumber,
+            newCard.collectionCode,
+            newCard.expiresAt,
+            newCard.collectorScore,
+            newCard.serialNumber,
+          ]
+        );
+        rewardMessage = `Вам подарена эксклюзивная карта: ${newCard.bank} (${newCard.material})!`;
+      }
+
+      // 6. Record activation
+      await client.query(
+        `INSERT INTO user_promo_activations (user_id, promo_id, code, reward_type, reward_value)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [user.id, promo.id, promo.code, promo.reward_type, promo.reward_value]
+      );
+
+      // 7. Increment promo uses
+      await client.query('UPDATE promo_codes SET uses_count = uses_count + 1 WHERE id = $1', [promo.id]);
+    });
+
+    res.json({
+      success: true,
+      rewardType: promo.reward_type,
+      rewardValue: promo.reward_value,
+      message: rewardMessage,
+      coins: updatedCoins,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/admin/promos — List all promo codes (Admin)
+apiRouter.get('/admin/promos', adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const promosRes = await query('SELECT * FROM promo_codes ORDER BY created_at DESC');
+    res.json({
+      success: true,
+      promos: promosRes.rows,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/admin/promos — Create a new promo code (Admin)
+apiRouter.post('/admin/promos', adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const { code, rewardType, rewardValue, maxUses, expiresAt } = req.body;
+  const rawCode = String(code || '').trim().toUpperCase();
+
+  if (!rawCode || rawCode.length < 2) {
+    return res.status(400).json({ success: false, error: 'Укажите валидный промокод' });
+  }
+  if (!['coins', 'cosmetic', 'card'].includes(rewardType)) {
+    return res.status(400).json({ success: false, error: 'Тип награды должен быть: coins, cosmetic или card' });
+  }
+  if (!rewardValue) {
+    return res.status(400).json({ success: false, error: 'Укажите значение награды' });
+  }
+
+  try {
+    const promoRes = await query(
+      `INSERT INTO promo_codes (code, reward_type, reward_value, max_uses, expires_at, is_active)
+       VALUES ($1, $2, $3, $4, $5, true)
+       RETURNING *`,
+      [rawCode, rewardType, String(rewardValue), Number(maxUses || 0), expiresAt || null]
+    );
+
+    res.json({
+      success: true,
+      promo: promoRes.rows[0],
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /api/admin/promos/:id — Delete or deactivate promo code (Admin)
+apiRouter.delete('/admin/promos/:id', adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const promoId = parseInt(req.params.id, 10);
+  if (isNaN(promoId)) {
+    return res.status(400).json({ success: false, error: 'Некорректный ID промокода' });
+  }
+
+  try {
+    await query('DELETE FROM promo_codes WHERE id = $1', [promoId]);
+    res.json({ success: true, message: 'Промокод успешно удален' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 

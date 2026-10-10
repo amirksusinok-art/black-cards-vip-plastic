@@ -30,6 +30,7 @@ export interface Card {
   collector_score: number;
   is_free_roll: boolean;
   serial_number?: string;
+  is_listed_on_market?: boolean;
   created_at: string;
 }
 
@@ -250,6 +251,80 @@ export interface AdminStats {
   totalCards: number;
   totalCoins: number;
   totalClicks: number;
+}
+
+export interface MarketListing {
+  id: number;
+  seller_id: number;
+  card_id: number;
+  price: number;
+  fee_percent: number;
+  status: 'active' | 'sold' | 'cancelled' | 'expired';
+  created_at: string;
+  expires_at: string;
+  sold_at?: string | null;
+  buyer_id?: number | null;
+  card_number?: string;
+  bank?: BankName;
+  material?: MaterialName;
+  category?: CategoryName;
+  collector_score?: number;
+  serial_number?: string;
+  collection_code?: string;
+  seller_username?: string;
+  seller_photo?: string;
+  seller_prefix?: string | null;
+}
+
+export interface MarketDeal {
+  id: number;
+  listing_id: number;
+  card_id: number;
+  seller_id: number;
+  buyer_id: number;
+  price: number;
+  fee_coins: number;
+  net_payout: number;
+  created_at: string;
+  card_bank?: string;
+  card_material?: string;
+  card_category?: string;
+  card_serial?: string;
+  seller_username?: string;
+  seller_prefix?: string | null;
+  buyer_username?: string;
+  buyer_prefix?: string | null;
+}
+
+export interface MarketEstimate {
+  recommendedMin: number;
+  recommendedMax: number;
+  avgPrice: number;
+  hasSufficientHistory: boolean;
+  pastDealsCount: number;
+}
+
+export interface MarketSellerProfile {
+  id: number;
+  username: string;
+  firstName: string;
+  photoUrl: string;
+  prefix?: string | null;
+  level: number;
+  activeListingsCount: number;
+  completedSalesCount: number;
+}
+
+export interface PromoCode {
+  id: number;
+  code: string;
+  reward_type: 'coins' | 'cosmetic' | 'card';
+  reward_value: string;
+  max_uses: number;
+  uses_count: number;
+  expires_at: string | null;
+  is_active: boolean;
+  created_at: string;
 }
 
 

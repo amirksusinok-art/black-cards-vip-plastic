@@ -19,6 +19,11 @@ import {
   AdminUserItem,
   AdminAuditLog,
   AdminStats,
+  MarketListing,
+  MarketDeal,
+  MarketEstimate,
+  MarketSellerProfile,
+  PromoCode,
 } from '../types.js';
 
 const API_BASE = '/api';
@@ -340,5 +345,161 @@ export const api = {
       success: boolean;
       stats: AdminStats;
     }>('/admin/stats'),
+
+  // Market P2P
+  getMarketListings: (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    bank?: string;
+    material?: string;
+    category?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    sortBy?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.search) query.set('search', params.search);
+    if (params?.bank) query.set('bank', params.bank);
+    if (params?.material) query.set('material', params.material);
+    if (params?.category) query.set('category', params.category);
+    if (params?.minPrice) query.set('minPrice', String(params.minPrice));
+    if (params?.maxPrice) query.set('maxPrice', String(params.maxPrice));
+    if (params?.sortBy) query.set('sortBy', params.sortBy);
+    return request<{
+      success: boolean;
+      listings: MarketListing[];
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    }>(`/market/listings?${query.toString()}`);
+  },
+
+  getMyMarketListings: () =>
+    request<{
+      success: boolean;
+      listings: MarketListing[];
+    }>('/market/my-listings'),
+
+  getMarketHistory: () =>
+    request<{
+      success: boolean;
+      deals: MarketDeal[];
+    }>('/market/history'),
+
+  getMarketEstimate: (cardId: number) =>
+    request<{
+      success: boolean;
+      card: Card;
+      estimate: MarketEstimate;
+      feePercent: number;
+      listingDurationDays: number;
+      eligibility: { eligible: boolean; reason?: string };
+    }>(`/market/estimate/${cardId}`),
+
+  getMarketSellerProfile: (userId: number) =>
+    request<{
+      success: boolean;
+      seller: MarketSellerProfile;
+    }>(`/market/seller/${userId}`),
+
+  listCardOnMarket: (cardId: number, price: number) =>
+    request<{
+      success: boolean;
+      listing: MarketListing;
+      feeInfo: { price: number; feeCoins: number; netPayout: number; feePercent: number };
+    }>('/market/list', {
+      method: 'POST',
+      body: JSON.stringify({ cardId, price }),
+    }),
+
+  buyMarketCard: (listingId: number) =>
+    request<{
+      success: boolean;
+      listingId: number;
+      cardId: number;
+      price: number;
+      feeCoins: number;
+      netPayout: number;
+      coinsRemaining: number;
+    }>('/market/buy', {
+      method: 'POST',
+      body: JSON.stringify({ listingId }),
+    }),
+
+  cancelMarketListing: (listingId: number) =>
+    request<{
+      success: boolean;
+      message: string;
+    }>('/market/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ listingId }),
+    }),
+
+  updateMarketPrice: (listingId: number, newPrice: number) =>
+    request<{
+      success: boolean;
+      listingId: number;
+      newPrice: number;
+      feeInfo: { price: number; feeCoins: number; netPayout: number; feePercent: number };
+    }>('/market/update-price', {
+      method: 'POST',
+      body: JSON.stringify({ listingId, newPrice }),
+    }),
+
+  extendMarketListing: (listingId: number) =>
+    request<{
+      success: boolean;
+      listingId: number;
+      expiresAt: string;
+    }>('/market/extend', {
+      method: 'POST',
+      body: JSON.stringify({ listingId }),
+    }),
+
+  // Promo Codes
+  redeemPromoCode: (code: string) =>
+    request<{
+      success: boolean;
+      rewardType: 'coins' | 'cosmetic' | 'card';
+      rewardValue: string;
+      message: string;
+      coins: number;
+    }>('/promo/redeem', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+
+  getAdminPromos: () =>
+    request<{
+      success: boolean;
+      promos: PromoCode[];
+    }>('/admin/promos'),
+
+  createAdminPromo: (data: {
+    code: string;
+    rewardType: 'coins' | 'cosmetic' | 'card';
+    rewardValue: string;
+    maxUses?: number;
+    expiresAt?: string | null;
+  }) =>
+    request<{
+      success: boolean;
+      promo: PromoCode;
+    }>('/admin/promos', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  deleteAdminPromo: (id: number) =>
+    request<{
+      success: boolean;
+      message: string;
+    }>(`/admin/promos/${id}`, {
+      method: 'DELETE',
+    }),
 };
 

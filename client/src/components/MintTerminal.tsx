@@ -184,7 +184,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
     return () => clearInterval(interval);
   }, [cooldown]);
 
-  const coins = user?.coins ?? 1500;
+  const coins = user?.coins ?? 5000;
   const isBomzhMode = coins < 500;
   const freeRollsLeft = (user?.maxFreeRolls || 150) - (user?.freeRollsToday || 0);
   const currentTierConfig = CASE_TIERS.find((t) => t.id === selectedTier) || CASE_TIERS[0];

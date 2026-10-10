@@ -3,16 +3,20 @@ import { UserProfile, LeaderboardUser, Card } from '../types.js';
 import { api } from '../utils/api.js';
 import { CardPreview } from './CardPreview.js';
 import { hapticImpact, hapticSelection } from '../utils/telegram.js';
-import { Trophy, Star, Share2, Award, Users, Shield, Sparkles } from 'lucide-react';
+import { Trophy, Star, Share2, Award, Users, Shield, Sparkles, Gift, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface ProfileViewProps {
   user: UserProfile | null;
   onOpenCardDetails: (card: Card) => void;
+  onRefreshProfile?: () => void;
 }
 
-export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetails }) => {
+export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetails, onRefreshProfile }) => {
   const [favoriteCards, setFavoriteCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(false);
+  const [promoCodeInput, setPromoCodeInput] = useState('');
+  const [redeemingPromo, setRedeemingPromo] = useState(false);
+  const [promoResult, setPromoResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -54,6 +58,28 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetail
     } else if (navigator.clipboard) {
       navigator.clipboard.writeText(`${shareText}\n${botUrl}`);
       alert('Ссылка на профиль скопирована!');
+    }
+  };
+
+  const handleRedeemPromo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = promoCodeInput.trim().toUpperCase();
+    if (!code) return;
+
+    try {
+      setRedeemingPromo(true);
+      setPromoResult(null);
+      hapticSelection();
+      const res = await api.redeemPromoCode(code);
+      hapticImpact('heavy');
+      setPromoResult({ type: 'success', text: res.message });
+      setPromoCodeInput('');
+      onRefreshProfile?.();
+    } catch (err: any) {
+      hapticImpact('light');
+      setPromoResult({ type: 'error', text: err.message || 'Ошибка активации промокода' });
+    } finally {
+      setRedeemingPromo(false);
     }
   };
 
@@ -108,6 +134,50 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetail
               <Share2 className="w-4 h-4 text-cyan-400" />
               Поделиться профилем в Telegram
             </button>
+          </div>
+
+          {/* Promo Code Redemption Card */}
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-[#161824] to-[#0F1118] border border-amber-500/30 shadow-lg flex flex-col gap-2.5">
+            <div className="flex items-center gap-2">
+              <Gift className="w-4 h-4 text-amber-400" />
+              <span className="text-xs font-bold text-white uppercase font-mono tracking-wider">
+                Активация промокода
+              </span>
+            </div>
+
+            <form onSubmit={handleRedeemPromo} className="flex gap-2">
+              <input
+                type="text"
+                placeholder="START5000, VIPCARD..."
+                value={promoCodeInput}
+                onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-white uppercase font-mono placeholder-white/30 focus:outline-none focus:border-amber-400"
+              />
+              <button
+                type="submit"
+                disabled={redeemingPromo || !promoCodeInput.trim()}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs shadow-md transition-all active:scale-95 disabled:opacity-50"
+              >
+                {redeemingPromo ? '...' : 'Ввод'}
+              </button>
+            </form>
+
+            {promoResult && (
+              <div
+                className={`p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                  promoResult.type === 'success'
+                    ? 'bg-emerald-950/40 border border-emerald-500/40 text-emerald-300'
+                    : 'bg-red-950/40 border border-red-500/40 text-red-300'
+                }`}
+              >
+                {promoResult.type === 'success' ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                )}
+                <span>{promoResult.text}</span>
+              </div>
+            )}
           </div>
 
           {/* Favorites Showcase (up to 5 cards) */}

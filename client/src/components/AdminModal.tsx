@@ -14,8 +14,10 @@ import {
   Minus,
   RefreshCw,
   Terminal,
+  Gift,
+  Trash2,
 } from 'lucide-react';
-import { AdminUserItem, AdminAuditLog, AdminStats } from '../types.js';
+import { AdminUserItem, AdminAuditLog, AdminStats, PromoCode } from '../types.js';
 import { api } from '../utils/api.js';
 import { hapticSelection, hapticNotification } from '../utils/telegram.js';
 
@@ -26,13 +28,21 @@ interface AdminModalProps {
 }
 
 export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onRefreshGlobalUser }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'logs' | 'stats'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'promos' | 'logs' | 'stats'>('users');
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUserItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
+  const [promos, setPromos] = useState<PromoCode[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Promo code creation state
+  const [newPromoCode, setNewPromoCode] = useState('');
+  const [newPromoType, setNewPromoType] = useState<'coins' | 'cosmetic' | 'card'>('coins');
+  const [newPromoValue, setNewPromoValue] = useState('5000');
+  const [newPromoMaxUses, setNewPromoMaxUses] = useState('0');
+  const [creatingPromo, setCreatingPromo] = useState(false);
 
   // Balance adjustment modal state
   const [selectedUser, setSelectedUser] = useState<AdminUserItem | null>(null);
@@ -48,19 +58,64 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onRefre
   const loadData = async () => {
     try {
       setLoading(true);
-      const [statsRes, usersRes, logsRes] = await Promise.all([
+      const [statsRes, usersRes, logsRes, promosRes] = await Promise.all([
         api.getAdminStats().catch(() => ({ stats: null })),
         api.getAdminUsers(searchQuery).catch(() => ({ users: [] })),
         api.getAdminAuditLogs().catch(() => ({ logs: [] })),
+        api.getAdminPromos().catch(() => ({ promos: [] })),
       ]);
 
       if (statsRes.stats) setStats(statsRes.stats);
       if (usersRes.users) setUsers(usersRes.users);
       if (logsRes.logs) setAuditLogs(logsRes.logs);
+      if (promosRes.promos) setPromos(promosRes.promos);
     } catch (err: any) {
       setActionMessage({ type: 'error', text: err.message || 'Ошибка загрузки админ-панели' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreatePromo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = newPromoCode.trim().toUpperCase();
+    if (!code) {
+      setActionMessage({ type: 'error', text: 'Укажите код промокода' });
+      return;
+    }
+
+    try {
+      setCreatingPromo(true);
+      hapticSelection();
+      await api.createAdminPromo({
+        code,
+        rewardType: newPromoType,
+        rewardValue: newPromoValue,
+        maxUses: parseInt(newPromoMaxUses, 10) || 0,
+      });
+      hapticNotification('success');
+      setActionMessage({ type: 'success', text: `Промокод ${code} успешно создан!` });
+      setNewPromoCode('');
+      loadData();
+    } catch (err: any) {
+      setActionMessage({ type: 'error', text: err.message || 'Ошибка создания промокода' });
+      hapticNotification('error');
+    } finally {
+      setCreatingPromo(false);
+    }
+  };
+
+  const handleDeletePromo = async (promoId: number) => {
+    if (!window.confirm('Удалить этот промокод?')) return;
+    try {
+      hapticSelection();
+      await api.deleteAdminPromo(promoId);
+      hapticNotification('success');
+      setActionMessage({ type: 'success', text: 'Промокод удален' });
+      loadData();
+    } catch (err: any) {
+      setActionMessage({ type: 'error', text: err.message || 'Ошибка удаления промокода' });
+      hapticNotification('error');
     }
   };
 
@@ -194,7 +249,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onRefre
         )}
 
         {/* Navigation Tabs */}
-        <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-[#141722] border border-white/5">
+        <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-[#141722] border border-white/5">
           <button
             onClick={() => {
               hapticSelection();
@@ -209,13 +264,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onRefre
           <button
             onClick={() => {
               hapticSelection();
+              setActiveTab('promos');
+            }}
+            className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
+              activeTab === 'promos' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'text-white/50'
+            }`}
+          >
+            Промокоды
+          </button>
+          <button
+            onClick={() => {
+              hapticSelection();
               setActiveTab('logs');
             }}
             className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
               activeTab === 'logs' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'text-white/50'
             }`}
           >
-            Журнал аудита
+            Аудит
           </button>
           <button
             onClick={() => {
@@ -226,7 +292,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onRefre
               activeTab === 'stats' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'text-white/50'
             }`}
           >
-            Статистика
+            Инфо
           </button>
         </div>
 
@@ -434,6 +500,123 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onRefre
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* TAB: PROMO CODES */}
+        {activeTab === 'promos' && (
+          <div className="flex flex-col gap-3">
+            {/* Create Promo Code Form */}
+            <form onSubmit={handleCreatePromo} className="p-3.5 rounded-2xl bg-[#141724] border border-white/10 flex flex-col gap-2.5">
+              <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5 uppercase">
+                <Gift className="w-3.5 h-3.5 text-amber-400" />
+                Создать новый промокод
+              </span>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-white/50">Код промокода</label>
+                  <input
+                    type="text"
+                    placeholder="WINTER5000"
+                    value={newPromoCode}
+                    onChange={(e) => setNewPromoCode(e.target.value.toUpperCase())}
+                    className="bg-[#0E1017] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white uppercase focus:outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-white/50">Тип награды</label>
+                  <select
+                    value={newPromoType}
+                    onChange={(e: any) => {
+                      setNewPromoType(e.target.value);
+                      if (e.target.value === 'coins') setNewPromoValue('5000');
+                      else if (e.target.value === 'cosmetic') setNewPromoValue('bg_luxury_onyx');
+                      else setNewPromoValue('gold');
+                    }}
+                    className="bg-[#0E1017] border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none"
+                  >
+                    <option value="coins">Монеты (₽)</option>
+                    <option value="cosmetic">Оформление (Item)</option>
+                    <option value="card">Карта (Card)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-white/50">
+                    {newPromoType === 'coins' ? 'Сумма монет (₽)' : newPromoType === 'cosmetic' ? 'Ключ предмета' : 'Тир (gold/titanium)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={newPromoValue}
+                    onChange={(e) => setNewPromoValue(e.target.value)}
+                    className="bg-[#0E1017] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-white/50">Лимит активаций (0 = ∞)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newPromoMaxUses}
+                    onChange={(e) => setNewPromoMaxUses(e.target.value)}
+                    className="bg-[#0E1017] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={creatingPromo || !newPromoCode.trim()}
+                className="mt-1 w-full py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{creatingPromo ? 'Создание...' : 'Добавить промокод'}</span>
+              </button>
+            </form>
+
+            {/* Existing Promo Codes List */}
+            <div className="flex flex-col gap-2 max-h-60 overflow-y-auto">
+              <span className="text-[11px] text-white/50 px-1 uppercase tracking-wider font-bold">
+                Активные промокоды ({promos.length})
+              </span>
+
+              {promos.length === 0 ? (
+                <div className="py-6 text-center text-xs text-white/40">Промокодов пока нет</div>
+              ) : (
+                promos.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between p-2.5 rounded-xl bg-[#141724] border border-white/5 text-xs"
+                  >
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-amber-300 font-mono text-sm">{p.code}</span>
+                        <span className="px-1.5 py-0.2 rounded text-[9px] uppercase font-bold bg-white/10 text-white/70">
+                          {p.reward_type}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-white/40 mt-0.5">
+                        Награда: <strong className="text-white/80">{p.reward_value}</strong> • Использовано:{' '}
+                        {p.uses_count} / {p.max_uses > 0 ? p.max_uses : '∞'}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => handleDeletePromo(p.id)}
+                      className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 transition-colors"
+                      title="Удалить промокод"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
 

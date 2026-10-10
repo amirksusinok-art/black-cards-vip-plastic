@@ -21,7 +21,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   onOpenTasks,
   onOpenSettings,
 }) => {
-  const coins = user?.coins ?? 1500;
+  const coins = user?.coins ?? 5000;
   const level = user?.level ?? 1;
   const tasksProgress = user?.tasksProgress ?? '0 из 3 заданий';
 

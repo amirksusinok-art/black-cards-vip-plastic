@@ -42,6 +42,10 @@ export interface MockDB {
   user_clicker: any[];
   admin_audit_log: any[];
   leaderboard_history: any[];
+  market_listings: any[];
+  market_deals_history: any[];
+  promo_codes: any[];
+  user_promo_activations: any[];
 }
 
 const mockDbPath = path.resolve(process.cwd(), 'data_local_store.json');
@@ -85,7 +89,16 @@ function loadMockData(): MockDB {
     avita_deals: [],
     user_clicker: [],
     admin_audit_log: [],
-    leaderboard_history: []
+    leaderboard_history: [],
+    market_listings: [],
+    market_deals_history: [],
+    promo_codes: [
+      { id: 1, code: 'START5000', reward_type: 'coins', reward_value: '5000', max_uses: 0, uses_count: 0, is_active: true, created_at: new Date().toISOString() },
+      { id: 2, code: 'VIPCARD', reward_type: 'coins', reward_value: '10000', max_uses: 0, uses_count: 0, is_active: true, created_at: new Date().toISOString() },
+      { id: 3, code: 'DROPMARKET', reward_type: 'coins', reward_value: '3000', max_uses: 0, uses_count: 0, is_active: true, created_at: new Date().toISOString() },
+      { id: 4, code: 'ONYX', reward_type: 'cosmetic', reward_value: 'bg_luxury_onyx', max_uses: 0, uses_count: 0, is_active: true, created_at: new Date().toISOString() },
+    ],
+    user_promo_activations: []
   };
 
   try {
@@ -97,15 +110,29 @@ function loadMockData(): MockDB {
           existingTasks.push(dt);
         }
       }
+      const existingPromos = Array.isArray(parsed.promo_codes) ? parsed.promo_codes : [];
+      for (const dp of defaultData.promo_codes) {
+        if (!existingPromos.some((p: any) => p.code === dp.code)) {
+          existingPromos.push(dp);
+        }
+      }
       return {
         ...defaultData,
         ...parsed,
         daily_tasks: existingTasks,
+        cards: Array.isArray(parsed.cards) ? parsed.cards.map((c: any) => ({
+          ...c,
+          is_listed_on_market: Boolean(c.is_listed_on_market)
+        })) : [],
         user_clicker: Array.isArray(parsed.user_clicker) ? parsed.user_clicker : [],
         avita_sessions: Array.isArray(parsed.avita_sessions) ? parsed.avita_sessions : [],
         avita_deals: Array.isArray(parsed.avita_deals) ? parsed.avita_deals : [],
         admin_audit_log: Array.isArray(parsed.admin_audit_log) ? parsed.admin_audit_log : [],
-        leaderboard_history: Array.isArray(parsed.leaderboard_history) ? parsed.leaderboard_history : []
+        leaderboard_history: Array.isArray(parsed.leaderboard_history) ? parsed.leaderboard_history : [],
+        market_listings: Array.isArray(parsed.market_listings) ? parsed.market_listings : [],
+        market_deals_history: Array.isArray(parsed.market_deals_history) ? parsed.market_deals_history : [],
+        promo_codes: existingPromos,
+        user_promo_activations: Array.isArray(parsed.user_promo_activations) ? parsed.user_promo_activations : []
       };
     }
   } catch (err) {
@@ -213,6 +240,10 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
   if (!mockDB.user_settings) mockDB.user_settings = [];
   if (!mockDB.admin_audit_log) mockDB.admin_audit_log = [];
   if (!mockDB.leaderboard_history) mockDB.leaderboard_history = [];
+  if (!mockDB.market_listings) mockDB.market_listings = [];
+  if (!mockDB.market_deals_history) mockDB.market_deals_history = [];
+  if (!mockDB.promo_codes) mockDB.promo_codes = [];
+  if (!mockDB.user_promo_activations) mockDB.user_promo_activations = [];
 
   const trimmed = sql.trim().toUpperCase();
 
@@ -241,9 +272,11 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
   if (sql.includes('INSERT INTO users')) {
     const tgId = params[0];
     const username = params[1];
-    let customCoins = 1500;
-    // Check if coins parameter was provided
-    if (params.length >= 3 && typeof params[2] === 'number') {
+    let customCoins = 5000;
+    const coinsMatch = sql.match(/VALUES\s*\([^,]+,[^,]+,\s*(\d+)\)/i);
+    if (coinsMatch) {
+      customCoins = parseInt(coinsMatch[1], 10);
+    } else if (params.length >= 3 && typeof params[2] === 'number') {
       customCoins = params[2];
     }
     const firstName = typeof params[2] === 'string' ? params[2] : 'Player';
@@ -252,8 +285,9 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
     
     let user = mockDB.users.find(u => Number(u.telegram_id) === Number(tgId));
     if (!user) {
+      const maxUserId = mockDB.users.reduce((max, u) => Math.max(max, Number(u.id) || 0), 0);
       user = {
-        id: mockDB.users.length + 1,
+        id: maxUserId + 1,
         telegram_id: Number(tgId),
         username: username || 'user',
         first_name: firstName,
@@ -290,7 +324,7 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
 
   if (sql.includes('UPDATE users SET coins = coins -')) {
     const amountMatch = sql.match(/coins\s*-\s*(\d+)/i);
-    const amount = amountMatch ? parseInt(amountMatch[1], 10) : 500;
+    const amount = amountMatch ? parseInt(amountMatch[1], 10) : Number(params[0] ?? 500);
     const userId = params[params.length - 1];
     const user = mockDB.users.find(u => Number(u.id) === Number(userId));
     if (user) {
@@ -354,7 +388,8 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
   // 3. Cards Queries
   if (sql.includes('INSERT INTO cards')) {
     const [cardUid, userId, bank, material, category, cardNumber, code, expiresAt, score, isFree, serialNum] = params;
-    const cardId = mockDB.cards.length + 1;
+    const maxCardId = mockDB.cards.reduce((max, c) => Math.max(max, Number(c.id) || 0), 0);
+    const cardId = maxCardId + 1;
     const serial = serialNum || `CD-${String(cardId).padStart(6, '0')}`;
     const card = {
       id: cardId,
@@ -369,6 +404,7 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
       collector_score: Number(score),
       is_free_roll: Boolean(isFree),
       serial_number: serial,
+      is_listed_on_market: false,
       created_at: new Date().toISOString()
     };
     mockDB.cards.push(card);
@@ -380,7 +416,11 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
     const userId = params[0];
     let userCards = mockDB.cards
       .filter(c => c.user_id === Number(userId) && !c.is_sold)
-      .map(c => ({ ...c, serial_number: c.serial_number || `CD-${String(c.id).padStart(6, '0')}` }));
+      .map(c => ({
+        ...c,
+        is_listed_on_market: Boolean(c.is_listed_on_market),
+        serial_number: c.serial_number || `CD-${String(c.id).padStart(6, '0')}`
+      }));
     
     // Check filters
     if (sql.includes('bank =')) {
@@ -398,14 +438,26 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
 
   if (sql.includes('FROM cards WHERE id = ANY(') || sql.includes('FROM cards WHERE id IN (')) {
     const ids = Array.isArray(params[0]) ? params[0].map(Number) : params.map(Number);
-    const matched = mockDB.cards.filter(c => ids.includes(Number(c.id)));
+    const matched = mockDB.cards.filter(c => ids.includes(Number(c.id))).map(c => ({
+      ...c,
+      is_listed_on_market: Boolean(c.is_listed_on_market)
+    }));
     return { rows: matched, rowCount: matched.length };
   }
 
   if (sql.includes('FROM cards WHERE id =') || sql.includes('FROM cards WHERE card_uid =')) {
     const idOrUid = params[0];
     const card = mockDB.cards.find(c => c.id === Number(idOrUid) || c.card_uid === idOrUid);
-    return { rows: card ? [card] : [], rowCount: card ? 1 : 0 };
+    if (card) {
+      return {
+        rows: [{
+          ...card,
+          is_listed_on_market: Boolean(card.is_listed_on_market)
+        }],
+        rowCount: 1
+      };
+    }
+    return { rows: [], rowCount: 0 };
   }
 
   // 4. Free Rolls (BOMZH Mode)
@@ -838,6 +890,349 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
     }
     saveMockData();
     return { rows: [h], rowCount: 1 };
+  }
+
+  // 17. Cards Market Status Updates
+  if (sql.includes('UPDATE cards SET is_listed_on_market =')) {
+    let isListed = false;
+    let cardId: any;
+    if (sql.includes('is_listed_on_market = true')) {
+      isListed = true;
+      cardId = params[0];
+    } else if (sql.includes('is_listed_on_market = false')) {
+      isListed = false;
+      cardId = params[0];
+    } else {
+      isListed = Boolean(params[0]);
+      cardId = params[params.length - 1];
+    }
+    const card = mockDB.cards.find(c => Number(c.id) === Number(cardId));
+    if (card) {
+      card.is_listed_on_market = isListed;
+      saveMockData();
+      return { rows: [card], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  if (sql.includes('UPDATE cards SET user_id =') && sql.includes('is_listed_on_market = false')) {
+    const newUserId = params[0];
+    const cardId = params[params.length - 1];
+    const card = mockDB.cards.find(c => Number(c.id) === Number(cardId));
+    if (card) {
+      card.user_id = Number(newUserId);
+      card.is_listed_on_market = false;
+      saveMockData();
+      return { rows: [card], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  // 18. Market Listings Queries
+  if (sql.includes('INSERT INTO market_listings')) {
+    let sellerId = params[0];
+    let cardId = params[1];
+    let price = params[2];
+    let feePercent = params[3];
+    let status = 'active';
+    let expiresAt: any;
+    if (sql.includes("'active'")) {
+      status = 'active';
+      expiresAt = params[4];
+    } else if (params.length >= 6) {
+      status = params[4] || 'active';
+      expiresAt = params[5];
+    } else {
+      expiresAt = params[4];
+    }
+    const listingId = mockDB.market_listings.length + 1;
+    const listing = {
+      id: listingId,
+      seller_id: Number(sellerId),
+      card_id: Number(cardId),
+      price: Number(price),
+      fee_percent: Number(feePercent || 3.0),
+      status: status || 'active',
+      created_at: new Date().toISOString(),
+      expires_at: expiresAt || new Date(Date.now() + 7 * 86400000).toISOString(),
+      sold_at: null,
+      buyer_id: null
+    };
+    mockDB.market_listings.push(listing);
+    saveMockData();
+    return { rows: [listing], rowCount: 1 };
+  }
+
+  if (sql.includes('FROM market_listings') && (sql.includes('WHERE id =') || sql.includes('WHERE ml.id ='))) {
+    const id = params[0];
+    const listing = mockDB.market_listings.find(l => Number(l.id) === Number(id));
+    if (!listing) return { rows: [], rowCount: 0 };
+    const card = mockDB.cards.find(c => Number(c.id) === Number(listing.card_id));
+    const seller = mockDB.users.find(u => Number(u.id) === Number(listing.seller_id));
+    const enriched = {
+      ...listing,
+      card_number: card?.card_number || '',
+      bank: card?.bank || '',
+      material: card?.material || '',
+      category: card?.category || '',
+      collector_score: card?.collector_score || 0,
+      serial_number: card?.serial_number || `CD-${String(card?.id).padStart(6, '0')}`,
+      collection_code: card?.collection_code || '',
+      expires_at_card: card?.expires_at || '',
+      seller_username: seller?.username || 'user',
+      seller_photo: seller?.photo_url || '',
+      seller_prefix: seller?.prefix || null
+    };
+    return { rows: [enriched], rowCount: 1 };
+  }
+
+  if (sql.includes('FROM market_listings') && sql.includes('card_id =')) {
+    const cardId = params[0];
+    let listing: any;
+    if (sql.includes("status = 'active'")) {
+      listing = mockDB.market_listings.find(l => Number(l.card_id) === Number(cardId) && l.status === 'active');
+    } else {
+      listing = mockDB.market_listings.find(l => Number(l.card_id) === Number(cardId));
+    }
+    return { rows: listing ? [listing] : [], rowCount: listing ? 1 : 0 };
+  }
+
+  if (sql.includes('FROM market_listings') && (sql.includes('seller_id =') || sql.includes('ml.seller_id ='))) {
+    const sellerId = params[0];
+    const list = mockDB.market_listings
+      .filter(l => Number(l.seller_id) === Number(sellerId))
+      .map(listing => {
+        const card = mockDB.cards.find(c => Number(c.id) === Number(listing.card_id));
+        return {
+          ...listing,
+          card_number: card?.card_number || '',
+          bank: card?.bank || '',
+          material: card?.material || '',
+          category: card?.category || '',
+          collector_score: card?.collector_score || 0,
+          serial_number: card?.serial_number || `CD-${String(card?.id).padStart(6, '0')}`,
+          collection_code: card?.collection_code || ''
+        };
+      })
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return { rows: list, rowCount: list.length };
+  }
+
+  if (sql.includes('FROM market_listings')) {
+    // General active market listings browse with filters
+    let list = mockDB.market_listings.filter(l => l.status === 'active');
+    // Check if expired
+    const now = Date.now();
+    list = list.filter(l => new Date(l.expires_at).getTime() > now);
+
+    const enrichedList = list.map(listing => {
+      const card = mockDB.cards.find(c => Number(c.id) === Number(listing.card_id));
+      const seller = mockDB.users.find(u => Number(u.id) === Number(listing.seller_id));
+      return {
+        ...listing,
+        card_number: card?.card_number || '',
+        bank: card?.bank || '',
+        material: card?.material || '',
+        category: card?.category || '',
+        collector_score: card?.collector_score || 0,
+        serial_number: card?.serial_number || `CD-${String(card?.id).padStart(6, '0')}`,
+        collection_code: card?.collection_code || '',
+        seller_username: seller?.username || 'user',
+        seller_photo: seller?.photo_url || '',
+        seller_prefix: seller?.prefix || null
+      };
+    });
+
+    enrichedList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return { rows: enrichedList, rowCount: enrichedList.length };
+  }
+
+  if (sql.includes('UPDATE market_listings SET price =')) {
+    const newPrice = Number(params[0]);
+    const listingId = params[params.length - 1];
+    const listing = mockDB.market_listings.find(l => Number(l.id) === Number(listingId));
+    if (listing) {
+      listing.price = newPrice;
+      saveMockData();
+      return { rows: [listing], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  if (sql.includes('UPDATE market_listings SET expires_at =')) {
+    const newExpires = params[0];
+    const listingId = params[params.length - 1];
+    const listing = mockDB.market_listings.find(l => Number(l.id) === Number(listingId));
+    if (listing) {
+      listing.expires_at = newExpires;
+      saveMockData();
+      return { rows: [listing], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  if (sql.includes("UPDATE market_listings SET status = 'cancelled'")) {
+    const listingId = params[0];
+    const listing = mockDB.market_listings.find(l => Number(l.id) === Number(listingId));
+    if (listing) {
+      listing.status = 'cancelled';
+      saveMockData();
+      return { rows: [listing], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  if (sql.includes("UPDATE market_listings SET status = 'sold'")) {
+    const buyerId = params[0];
+    const soldAt = params[1];
+    const listingId = params[params.length - 1];
+    const listing = mockDB.market_listings.find(l => Number(l.id) === Number(listingId));
+    if (listing) {
+      listing.status = 'sold';
+      listing.buyer_id = Number(buyerId);
+      listing.sold_at = soldAt;
+      saveMockData();
+      return { rows: [listing], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  // 19. Market Deals History Queries
+  if (sql.includes('INSERT INTO market_deals_history')) {
+    const [listingId, cardId, sellerId, buyerId, price, feeCoins, netPayout] = params;
+    const deal = {
+      id: mockDB.market_deals_history.length + 1,
+      listing_id: Number(listingId),
+      card_id: Number(cardId),
+      seller_id: Number(sellerId),
+      buyer_id: Number(buyerId),
+      price: Number(price),
+      fee_coins: Number(feeCoins),
+      net_payout: Number(netPayout),
+      created_at: new Date().toISOString()
+    };
+    mockDB.market_deals_history.unshift(deal);
+    saveMockData();
+    return { rows: [deal], rowCount: 1 };
+  }
+
+  if (sql.includes('FROM market_deals_history')) {
+    let deals = mockDB.market_deals_history;
+    if (sql.includes('listing_id =')) {
+      const lId = params[0];
+      deals = deals.filter(d => Number(d.listing_id) === Number(lId));
+    } else if (sql.includes('card_id =')) {
+      const cId = params[0];
+      deals = deals.filter(d => Number(d.card_id) === Number(cId));
+    }
+    const enrichedDeals = deals.map(deal => {
+      const card = mockDB.cards.find(c => Number(c.id) === Number(deal.card_id));
+      const seller = mockDB.users.find(u => Number(u.id) === Number(deal.seller_id));
+      const buyer = mockDB.users.find(u => Number(u.id) === Number(deal.buyer_id));
+      return {
+        ...deal,
+        card_bank: card?.bank || '',
+        card_material: card?.material || '',
+        card_category: card?.category || '',
+        card_serial: card?.serial_number || `CD-${String(card?.id).padStart(6, '0')}`,
+        seller_username: seller?.username || 'user',
+        seller_prefix: seller?.prefix || null,
+        buyer_username: buyer?.username || 'user',
+        buyer_prefix: buyer?.prefix || null
+      };
+    });
+    enrichedDeals.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return { rows: enrichedDeals.slice(0, 50), rowCount: enrichedDeals.length };
+  }
+
+  // 20. Promo Codes Queries
+  if (sql.includes('FROM promo_codes WHERE') && (sql.includes('UPPER(code) =') || sql.includes('code ='))) {
+    let rawCode = String(params[0] || '').trim().toUpperCase();
+    if (!rawCode) {
+      const match = sql.match(/code\s*=\s*'([^']+)'/i);
+      if (match) rawCode = match[1].trim().toUpperCase();
+    }
+    const promo = mockDB.promo_codes.find(p => p.code.trim().toUpperCase() === rawCode && p.is_active);
+    return { rows: promo ? [promo] : [], rowCount: promo ? 1 : 0 };
+  }
+
+  if (sql.includes('FROM promo_codes')) {
+    return { rows: mockDB.promo_codes, rowCount: mockDB.promo_codes.length };
+  }
+
+  if (sql.includes('INSERT INTO promo_codes')) {
+    const [code, rewardType, rewardValue, maxUses, expiresAt, isActive] = params;
+    const promo = {
+      id: mockDB.promo_codes.length + 1,
+      code: String(code).trim().toUpperCase(),
+      reward_type: String(rewardType),
+      reward_value: String(rewardValue),
+      max_uses: Number(maxUses || 0),
+      uses_count: 0,
+      expires_at: expiresAt || null,
+      is_active: isActive !== undefined ? Boolean(isActive) : true,
+      created_at: new Date().toISOString()
+    };
+    mockDB.promo_codes.unshift(promo);
+    saveMockData();
+    return { rows: [promo], rowCount: 1 };
+  }
+
+  if (sql.includes('UPDATE promo_codes SET uses_count = uses_count + 1')) {
+    const promoId = params[0];
+    const promo = mockDB.promo_codes.find(p => Number(p.id) === Number(promoId));
+    if (promo) {
+      promo.uses_count = (promo.uses_count || 0) + 1;
+      saveMockData();
+      return { rows: [promo], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  if (sql.includes('UPDATE promo_codes SET is_active =')) {
+    const isActive = Boolean(params[0]);
+    const promoId = params[1];
+    const promo = mockDB.promo_codes.find(p => Number(p.id) === Number(promoId));
+    if (promo) {
+      promo.is_active = isActive;
+      saveMockData();
+      return { rows: [promo], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  if (sql.includes('DELETE FROM promo_codes WHERE id =')) {
+    const promoId = params[0];
+    const idx = mockDB.promo_codes.findIndex(p => Number(p.id) === Number(promoId));
+    if (idx !== -1) {
+      const removed = mockDB.promo_codes.splice(idx, 1);
+      saveMockData();
+      return { rows: removed, rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  // 21. User Promo Activations Queries
+  if (sql.includes('FROM user_promo_activations WHERE user_id =') && sql.includes('promo_id =')) {
+    const [userId, promoId] = params;
+    const act = mockDB.user_promo_activations.find(a => Number(a.user_id) === Number(userId) && Number(a.promo_id) === Number(promoId));
+    return { rows: act ? [act] : [], rowCount: act ? 1 : 0 };
+  }
+
+  if (sql.includes('INSERT INTO user_promo_activations')) {
+    const [userId, promoId, code, rewardType, rewardValue] = params;
+    const act = {
+      id: mockDB.user_promo_activations.length + 1,
+      user_id: Number(userId),
+      promo_id: Number(promoId),
+      code: String(code),
+      reward_type: String(rewardType),
+      reward_value: String(rewardValue),
+      created_at: new Date().toISOString()
+    };
+    mockDB.user_promo_activations.push(act);
+    saveMockData();
+    return { rows: [act], rowCount: 1 };
   }
 
   // Fallback generic empty
