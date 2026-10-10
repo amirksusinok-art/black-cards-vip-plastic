@@ -498,10 +498,10 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
                         } overflow-hidden relative flex items-center justify-center`}
                       >
                         <div
-                          key={`tick-${globalIdx}-${tickerDigits[globalIdx]}`}
+                          key={`tick-${globalIdx}-${tickerDigits?.[globalIdx] ?? 0}`}
                           className="animate-digitFall flex items-center justify-center font-mono font-bold text-white text-center leading-none"
                         >
-                          {tickerDigits[globalIdx]}
+                          {tickerDigits?.[globalIdx] ?? 0}
                         </div>
                       </div>
                     );

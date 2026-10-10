@@ -112,6 +112,11 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
     const mult = isHighTier ? 30 : ['Gold', 'Black Carbon'].includes(c.material) ? 15 : 2;
     const scoreBonus = Math.round((c.collector_score || 25) * mult);
     const bankBonus = c.bank === 'ВБ Банк' ? 300 : 0;
+    const base =
+      (materialBase[c.material] || 70) +
+      (categoryBonus[c.category] || 0) +
+      scoreBonus +
+      bankBonus;
     return Math.max(Math.round((base * 1.3) / 10) * 10, 80);
   };
 
@@ -313,12 +318,16 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
         jackpotHaptics();
         setTimeout(() => setIsJackpotActive(false), 850);
 
-        confetti({
-          particleCount: 85,
-          spread: 85,
-          origin: { y: 0.6 },
-          colors: ['#D4AF37', '#00FFCC', '#E11D48', '#FFFFFF'],
-        });
+        try {
+          confetti({
+            particleCount: 85,
+            spread: 85,
+            origin: { y: 0.6 },
+            colors: ['#D4AF37', '#00FFCC', '#E11D48', '#FFFFFF'],
+          });
+        } catch (e) {
+          console.warn('Confetti error:', e);
+        }
       }
     }
 
@@ -326,12 +335,16 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
     if (pendingAutoSummary) {
       setAutoSummary(pendingAutoSummary);
       setPendingAutoSummary(null);
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.6 },
-        colors: ['#D4AF37', '#00FFCC', '#FFFFFF'],
-      });
+      try {
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.6 },
+          colors: ['#D4AF37', '#00FFCC', '#FFFFFF'],
+        });
+      } catch (e) {
+        console.warn('Confetti error:', e);
+      }
       hapticNotification('success');
     }
 
