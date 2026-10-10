@@ -106,16 +106,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onRefre
   };
 
   const handleDeletePromo = async (promoId: number) => {
-    if (!window.confirm('Удалить этот промокод?')) return;
     try {
       hapticSelection();
+      // Optimistic local remove so UI updates immediately
+      setPromos((prev) => prev.filter((p) => p.id !== promoId));
       await api.deleteAdminPromo(promoId);
       hapticNotification('success');
-      setActionMessage({ type: 'success', text: 'Промокод удален' });
+      setActionMessage({ type: 'success', text: 'Промокод успешно удален' });
       loadData();
     } catch (err: any) {
       setActionMessage({ type: 'error', text: err.message || 'Ошибка удаления промокода' });
       hapticNotification('error');
+      loadData();
     }
   };
 

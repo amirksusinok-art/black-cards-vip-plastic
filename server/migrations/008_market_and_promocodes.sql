@@ -75,8 +75,6 @@ CREATE INDEX IF NOT EXISTS idx_user_promo_user ON user_promo_activations(user_id
 -- Pre-seed default promo codes
 INSERT INTO promo_codes (code, reward_type, reward_value, max_uses, is_active)
 VALUES 
-    ('START5000', 'coins', '5000', 0, true),
-    ('VIPCARD', 'coins', '10000', 0, true),
     ('DROPMARKET', 'coins', '3000', 0, true),
     ('ONYX', 'cosmetic', 'bg_luxury_onyx', 0, true)
 ON CONFLICT (code) DO NOTHING;

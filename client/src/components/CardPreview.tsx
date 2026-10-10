@@ -78,29 +78,19 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
     'Holographic',
   ];
 
-  // Rolling meta state for bottom strip
-  const [rollingSerial, setRollingSerial] = useState('CD-008421');
-  const [rollingExpiry, setRollingExpiry] = useState('12/29');
-  const [rollingCode, setRollingCode] = useState('007');
-  const [rollingMaterial, setRollingMaterial] = useState<MaterialName>('Classic Plastic');
-
   useEffect(() => {
     if (!isRolling) return;
     const interval = setInterval(() => {
       setTickerDigits(Array.from({ length: 16 }, () => Math.floor(Math.random() * 10)));
-      setRollingSerial(`CD-${Math.floor(Math.random() * 900000 + 100000)}`);
-      setRollingExpiry(
-        `${String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')}/${Math.floor(Math.random() * 6) + 28}`
-      );
-      setRollingCode(`${Math.floor(Math.random() * 900 + 100)}`);
-      setRollingMaterial(ALL_MATERIALS[Math.floor(Math.random() * ALL_MATERIALS.length)]);
     }, 45);
     return () => clearInterval(interval);
   }, [isRolling]);
 
-  // Sanitize card number to guarantee exactly 16 clean numeric characters
-  const cleanDigits = (activeCard?.card_number || targetCardNumber || '2202 8841 9023 5510')
-    .replace(/\D/g, '')
+  // Sanitize card number to guarantee exactly 16 clean numeric characters (never 0000 0000 0000 0000)
+  const rawNum = (activeCard?.card_number || targetCardNumber || '').replace(/\D/g, '');
+  const seedNum = activeCard?.id || 108421;
+  const fallbackDigits = `2202${String(seedNum * 137).slice(-4).padStart(4, '8')}${String(seedNum * 389).slice(-4).padStart(4, '4')}${String(seedNum * 791).slice(-4).padStart(4, '2')}`;
+  const cleanDigits = (rawNum.length >= 12 ? rawNum : fallbackDigits)
     .padEnd(16, '0')
     .slice(0, 16);
   const rawDigits = cleanDigits.split(''); // Exactly 16 digits
@@ -546,104 +536,64 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
           </div>
         )}
 
-        {/* Expiry & Holder Info & Serial Number (With Slot Reel & Sequential Locking) */}
-        {(() => {
-          const isSerialLocked = !isRolling || lockedBlocks >= 1;
-          const displaySerial = isSerialLocked ? serialNumber : rollingSerial;
-
-          const isExpiryLocked = !isRolling || lockedBlocks >= 2;
-          const displayExpiry = isExpiryLocked ? expiresAt : rollingExpiry;
-
-          const isCodeLocked = !isRolling || lockedBlocks >= 3;
-          const displayCode = isCodeLocked ? collectionCode : rollingCode;
-
-          const isMaterialLocked = !isRolling || lockedBlocks >= 4;
-          const displayMaterial = isMaterialLocked ? targetMaterial : rollingMaterial;
-
-          return (
+        {/* Expiry & Holder Info & Serial Number (Fixed in place, non-moving) */}
+        <div
+          className={`flex items-end justify-between uppercase tracking-wider font-mono select-none ${
+            isCompact ? 'text-[8px] leading-tight' : 'text-[10px] sm:text-[11px]'
+          }`}
+        >
+          <div>
             <div
-              className={`flex items-end justify-between uppercase tracking-wider font-mono ${
-                isCompact ? 'text-[8px] leading-tight' : 'text-[10px] sm:text-[11px]'
-              }`}
+              className={`${
+                isCompact ? 'text-[6.5px]' : 'text-[8px]'
+              } text-amber-300/60 leading-none mb-0.5 font-bold`}
             >
-              <div>
-                <div
-                  className={`${
-                    isCompact ? 'text-[6.5px]' : 'text-[8px]'
-                  } text-amber-300/60 leading-none mb-0.5 font-bold`}
-                >
-                  SERIAL
-                </div>
-                <div
-                  className={`font-bold tracking-tight transition-colors ${
-                    isSerialLocked
-                      ? 'text-amber-300 animate-lockPop'
-                      : 'text-amber-200/70 animate-pulse'
-                  }`}
-                >
-                  {displaySerial}
-                </div>
-              </div>
-
-              <div>
-                <div
-                  className={`${
-                    isCompact ? 'text-[6.5px]' : 'text-[8px]'
-                  } text-white/40 leading-none mb-0.5`}
-                >
-                  VALID THRU
-                </div>
-                <div
-                  className={`font-bold transition-colors ${
-                    isExpiryLocked
-                      ? 'text-white/90 animate-lockPop'
-                      : 'text-white/50 animate-pulse'
-                  }`}
-                >
-                  {displayExpiry}
-                </div>
-              </div>
-
-              <div>
-                <div
-                  className={`${
-                    isCompact ? 'text-[6.5px]' : 'text-[8px]'
-                  } text-white/40 leading-none mb-0.5`}
-                >
-                  CODE
-                </div>
-                <div
-                  className={`font-bold transition-colors ${
-                    isCodeLocked
-                      ? 'text-white/90 animate-lockPop'
-                      : 'text-white/50 animate-pulse'
-                  }`}
-                >
-                  {displayCode}
-                </div>
-              </div>
-
-              <div className="text-right">
-                <div
-                  className={`${
-                    isCompact ? 'text-[6.5px]' : 'text-[8px]'
-                  } text-white/40 leading-none mb-0.5`}
-                >
-                  MATERIAL
-                </div>
-                <div
-                  className={`font-bold transition-colors ${
-                    isMaterialLocked
-                      ? 'text-white/90 animate-lockPop'
-                      : 'text-cyan-300/70 animate-pulse'
-                  }`}
-                >
-                  {displayMaterial}
-                </div>
-              </div>
+              SERIAL
             </div>
-          );
-        })()}
+            <div className="font-bold tracking-tight text-amber-300">
+              {serialNumber}
+            </div>
+          </div>
+
+          <div>
+            <div
+              className={`${
+                isCompact ? 'text-[6.5px]' : 'text-[8px]'
+              } text-white/40 leading-none mb-0.5`}
+            >
+              VALID THRU
+            </div>
+            <div className="font-bold text-white/90">
+              {expiresAt}
+            </div>
+          </div>
+
+          <div>
+            <div
+              className={`${
+                isCompact ? 'text-[6.5px]' : 'text-[8px]'
+              } text-white/40 leading-none mb-0.5`}
+            >
+              CODE
+            </div>
+            <div className="font-bold text-white/90">
+              {collectionCode}
+            </div>
+          </div>
+
+          <div className="text-right">
+            <div
+              className={`${
+                isCompact ? 'text-[6.5px]' : 'text-[8px]'
+              } text-white/40 leading-none mb-0.5`}
+            >
+              MATERIAL
+            </div>
+            <div className="font-bold text-cyan-300">
+              {targetMaterial}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

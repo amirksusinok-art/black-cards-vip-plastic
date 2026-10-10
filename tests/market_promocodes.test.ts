@@ -26,7 +26,7 @@ describe('Marketplace & Promo Codes Integration Tests', () => {
       expect(user.coins).toBe(5000);
     });
 
-    it('Validates and redeems promo code START5000 successfully (+5000 Coins)', async () => {
+    it('Validates and redeems promo code DROPMARKET successfully (+3000 Coins)', async () => {
       const uniqueTgId = Math.floor(Math.random() * 900000000) + 100000000;
       await query(
         `INSERT INTO users (telegram_id, username, first_name) VALUES ($1, $2, $3)`,
@@ -37,7 +37,7 @@ describe('Marketplace & Promo Codes Integration Tests', () => {
       const initialCoins = user.coins;
 
       // Check promo code in DB
-      const promoRes = await query("SELECT * FROM promo_codes WHERE code = 'START5000' AND is_active = true");
+      const promoRes = await query("SELECT * FROM promo_codes WHERE code = 'DROPMARKET' AND is_active = true");
       expect(promoRes.rowCount).toBe(1);
       const promo = promoRes.rows[0];
 
@@ -53,7 +53,7 @@ describe('Marketplace & Promo Codes Integration Tests', () => {
       });
 
       const updatedUserRes = await query('SELECT coins FROM users WHERE id = $1', [user.id]);
-      expect(updatedUserRes.rows[0].coins).toBe(initialCoins + 5000);
+      expect(updatedUserRes.rows[0].coins).toBe(initialCoins + 3000);
 
       // Verify cannot redeem a second time
       const checkActivation = await query(

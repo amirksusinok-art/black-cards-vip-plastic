@@ -148,7 +148,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetail
             <form onSubmit={handleRedeemPromo} className="flex gap-2">
               <input
                 type="text"
-                placeholder="START5000, VIPCARD..."
+                placeholder="Введите промокод..."
                 value={promoCodeInput}
                 onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
                 className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-white uppercase font-mono placeholder-white/30 focus:outline-none focus:border-amber-400"

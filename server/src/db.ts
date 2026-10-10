@@ -93,10 +93,8 @@ function loadMockData(): MockDB {
     market_listings: [],
     market_deals_history: [],
     promo_codes: [
-      { id: 1, code: 'START5000', reward_type: 'coins', reward_value: '5000', max_uses: 0, uses_count: 0, is_active: true, created_at: new Date().toISOString() },
-      { id: 2, code: 'VIPCARD', reward_type: 'coins', reward_value: '10000', max_uses: 0, uses_count: 0, is_active: true, created_at: new Date().toISOString() },
-      { id: 3, code: 'DROPMARKET', reward_type: 'coins', reward_value: '3000', max_uses: 0, uses_count: 0, is_active: true, created_at: new Date().toISOString() },
-      { id: 4, code: 'ONYX', reward_type: 'cosmetic', reward_value: 'bg_luxury_onyx', max_uses: 0, uses_count: 0, is_active: true, created_at: new Date().toISOString() },
+      { id: 1, code: 'DROPMARKET', reward_type: 'coins', reward_value: '3000', max_uses: 0, uses_count: 0, is_active: true, created_at: new Date().toISOString() },
+      { id: 2, code: 'ONYX', reward_type: 'cosmetic', reward_value: 'bg_luxury_onyx', max_uses: 0, uses_count: 0, is_active: true, created_at: new Date().toISOString() },
     ],
     user_promo_activations: []
   };
@@ -110,20 +108,25 @@ function loadMockData(): MockDB {
           existingTasks.push(dt);
         }
       }
-      const existingPromos = Array.isArray(parsed.promo_codes) ? parsed.promo_codes : [];
-      for (const dp of defaultData.promo_codes) {
-        if (!existingPromos.some((p: any) => p.code === dp.code)) {
-          existingPromos.push(dp);
-        }
+      let existingPromos = Array.isArray(parsed.promo_codes) ? parsed.promo_codes : [];
+      // Remove any unwanted starter promos
+      existingPromos = existingPromos.filter((p: any) => p && !['START5000', 'VIPCARD'].includes(p.code));
+      if (existingPromos.length === 0) {
+        existingPromos = [...defaultData.promo_codes];
       }
       return {
         ...defaultData,
         ...parsed,
         daily_tasks: existingTasks,
-        cards: Array.isArray(parsed.cards) ? parsed.cards.map((c: any) => ({
-          ...c,
-          is_listed_on_market: Boolean(c.is_listed_on_market)
-        })) : [],
+        cards: Array.isArray(parsed.cards) ? parsed.cards.map((c: any) => {
+          const rawNum = (c.card_number || '').replace(/\D/g, '');
+          const fallback = `2202 ${String((c.id || 1) * 137).slice(-4).padStart(4, '8')} ${String((c.id || 1) * 389).slice(-4).padStart(4, '4')} ${String((c.id || 1) * 791).slice(-4).padStart(4, '2')}`;
+          return {
+            ...c,
+            card_number: rawNum.length >= 12 ? c.card_number : fallback,
+            is_listed_on_market: Boolean(c.is_listed_on_market)
+          };
+        }) : [],
         user_clicker: Array.isArray(parsed.user_clicker) ? parsed.user_clicker : [],
         avita_sessions: Array.isArray(parsed.avita_sessions) ? parsed.avita_sessions : [],
         avita_deals: Array.isArray(parsed.avita_deals) ? parsed.avita_deals : [],
@@ -182,6 +185,8 @@ export async function initDatabase(): Promise<void> {
           console.log(`Migration ${file} applied successfully.`);
         }
       }
+      // Ensure removed starter promo codes are deleted from database
+      await pool.query("DELETE FROM promo_codes WHERE code IN ('START5000', 'VIPCARD')").catch(() => {});
       return;
     } catch (err) {
       console.warn('PostgreSQL connection failed. Falling back to local storage engine:', err);

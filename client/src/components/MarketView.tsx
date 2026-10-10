@@ -467,6 +467,11 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 const isMyListing = item.seller_id === user?.id;
                 const canAfford = (user?.coins || 0) >= item.price;
 
+                const fallbackCardNumber = `2202 ${String((item.card_id || 1) * 137).slice(-4).padStart(4, '8')} ${String((item.card_id || 1) * 389).slice(-4).padStart(4, '4')} ${String((item.card_id || 1) * 791).slice(-4).padStart(4, '2')}`;
+                const safeCardNumber = item.card_number && item.card_number.replace(/\D/g, '').length >= 12
+                  ? item.card_number
+                  : fallbackCardNumber;
+
                 const dummyCard: Card = {
                   id: item.card_id,
                   card_uid: `uid_${item.card_id}`,
@@ -474,7 +479,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                   bank: item.bank as BankName,
                   material: item.material as MaterialName,
                   category: item.category as any,
-                  card_number: item.card_number || '•••• •••• •••• ••••',
+                  card_number: safeCardNumber,
                   collection_code: item.collection_code || '000',
                   expires_at: '12/30',
                   collector_score: item.collector_score || 30,
@@ -604,6 +609,11 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 const isActive = item.status === 'active';
                 const isSold = item.status === 'sold';
                 const isCancelled = item.status === 'cancelled';
+                const fallbackCardNumber = `2202 ${String((item.card_id || 1) * 137).slice(-4).padStart(4, '8')} ${String((item.card_id || 1) * 389).slice(-4).padStart(4, '4')} ${String((item.card_id || 1) * 791).slice(-4).padStart(4, '2')}`;
+                const safeCardNumber = item.card_number && item.card_number.replace(/\D/g, '').length >= 12
+                  ? item.card_number
+                  : fallbackCardNumber;
+
                 const dummyCard: Card = {
                   id: item.card_id,
                   card_uid: `uid_${item.card_id}`,
@@ -611,7 +621,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                   bank: item.bank as BankName,
                   material: item.material as MaterialName,
                   category: item.category as any,
-                  card_number: item.card_number || '•••• •••• •••• ••••',
+                  card_number: safeCardNumber,
                   collection_code: item.collection_code || '000',
                   expires_at: '12/30',
                   collector_score: item.collector_score || 30,
