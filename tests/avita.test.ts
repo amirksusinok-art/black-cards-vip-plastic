@@ -4,6 +4,7 @@ import {
   evaluateBatchCards,
   generateInitialGreeting,
   processBargainRound,
+  getValuationRationale,
 } from '../server/src/avitaEngine.js';
 import { initDatabase, query, withTransaction } from '../server/src/db.js';
 
@@ -195,5 +196,35 @@ describe('Avita Merchant Engine & Integration Tests', () => {
     // Check balance
     const updatedUser = (await query('SELECT * FROM users WHERE id = $1', [user.id])).rows[0];
     expect(updatedUser.coins).toBe(5000);
+  });
+
+  it('Generates simple human rationale explanations for cards based on rarity', () => {
+    const rareMatCard = {
+      id: 201,
+      bank: 'Тинькоффи',
+      material: 'Gold',
+      category: 'Standard',
+      collector_score: 50,
+      is_free_roll: false,
+    };
+    const rat1 = getValuationRationale(rareMatCard);
+    expect(rat1).toContain('Материал редкий (Gold)');
+    expect(rat1).toContain('категория номера распространённая (Standard)');
+
+    const wbCard = {
+      id: 202,
+      bank: 'ВБ Банк',
+      material: 'Classic Plastic',
+      category: 'Standard',
+      collector_score: 30,
+      is_free_roll: false,
+    };
+    const rat2 = getValuationRationale(wbCard);
+    expect(rat2).toContain('WB Bank');
+
+    const evalRes = evaluateSingleCard(rareMatCard);
+    expect(evalRes.baseValuation).toBeGreaterThan(0);
+    expect(evalRes.spread).toBeLessThanOrEqual(0);
+    expect(evalRes.rationale).toBeDefined();
   });
 });

@@ -4,6 +4,9 @@ export interface CardEvaluation {
   cardId: number;
   initialPrice: number;
   maxPrice: number;
+  baseValuation: number;
+  spread: number;
+  rationale: string;
   isEligible: boolean;
   rejectReason?: string;
 }
@@ -15,6 +18,8 @@ export interface AvitaSession {
   initialOffer: number;
   currentOffer: number;
   maxOffer: number;
+  baseValuation?: number;
+  rationale?: string;
   roundsUsed: number;
   status: 'active' | 'accepted' | 'rejected' | 'cancelled';
   dialogHistory: { sender: 'avita' | 'player'; message: string; timestamp: string }[];
@@ -23,6 +28,32 @@ export interface AvitaSession {
 }
 
 export const CASE_PRICE = 500;
+
+/**
+ * Generate human explanation for card valuation
+ */
+export function getValuationRationale(card: any): string {
+  const mat = card.material || 'Classic Plastic';
+  const cat = card.category || 'Standard';
+  const bank = card.bank || 'Алфа Банк';
+
+  const isRareMat = ['Gold', 'Black Carbon', 'Titanium', 'Holographic'].includes(mat);
+  const isRareCat = cat !== 'Standard';
+
+  if (bank === 'ВБ Банк') {
+    return `Эксклюзивный WB Bank с 5% шансом выпадения. Фирменный цвет и повышенный спрос у коллекционеров.`;
+  }
+  if (isRareMat && !isRareCat) {
+    return `Материал редкий (${mat}), но категория номера распространённая (${cat}) — металл ценный, однако номер стандартный.`;
+  }
+  if (!isRareMat && isRareCat) {
+    return `Категория номера редкая (${cat}), но материал базовый (${mat}) — красивый номерной узор, хотя пластик обычный.`;
+  }
+  if (isRareMat && isRareCat) {
+    return `Исключительное комбо: благородный ${mat} с редким узором ${cat} — высокая коллекционная ценность.`;
+  }
+  return `Базовый пластик (${mat}) со стандартным номером (${cat}) — умеренный спрос на вторичном рынке.`;
+}
 
 /**
  * Calculate Avita's valuation for a single card
@@ -35,6 +66,9 @@ export function evaluateSingleCard(card: any): CardEvaluation {
       cardId: card.id,
       initialPrice: 0,
       maxPrice: 0,
+      baseValuation: 0,
+      spread: 0,
+      rationale: 'Карта получена бесплатно в режиме «БОМЖ» и не подлежит продаже.',
       isEligible: false,
       rejectReason: 'Эту карту я не покупаю. Она получена в бесплатном режиме («БОМЖ») и не предназначена для продажи.',
     };
@@ -78,11 +112,16 @@ export function evaluateSingleCard(card: any): CardEvaluation {
   // initialPrice = 80 ₽ (16% of 500 ₽ case). Perfectly in the 10-40% range!
   const maxPrice = Math.max(Math.round((calculatedBase * 1.3) / 10) * 10, 80);
   const initialPrice = Math.max(Math.round((calculatedBase * 0.7) / 10) * 10, 50);
+  const rationale = getValuationRationale(card);
+  const spread = initialPrice - calculatedBase;
 
   return {
     cardId: card.id,
     initialPrice,
     maxPrice,
+    baseValuation: calculatedBase,
+    spread,
+    rationale,
     isEligible: true,
   };
 }
@@ -94,12 +133,15 @@ export function evaluateBatchCards(cards: any[]): {
   evaluations: CardEvaluation[];
   totalInitial: number;
   totalMax: number;
+  totalBaseValuation: number;
+  overallRationale: string;
   ineligibleCards: any[];
 } {
   const evaluations: CardEvaluation[] = [];
   const ineligibleCards: any[] = [];
   let totalInitial = 0;
   let totalMax = 0;
+  let totalBaseValuation = 0;
 
   for (const card of cards) {
     const ev = evaluateSingleCard(card);
@@ -109,13 +151,21 @@ export function evaluateBatchCards(cards: any[]): {
       evaluations.push(ev);
       totalInitial += ev.initialPrice;
       totalMax += ev.maxPrice;
+      totalBaseValuation += ev.baseValuation;
     }
   }
+
+  const overallRationale =
+    cards.length === 1 && evaluations.length === 1
+      ? evaluations[0].rationale
+      : `Пакетная оценка ${evaluations.length} карт с учётом редкости материалов и спроса на вторичном рынке.`;
 
   return {
     evaluations,
     totalInitial,
     totalMax,
+    totalBaseValuation,
+    overallRationale,
     ineligibleCards,
   };
 }
@@ -123,23 +173,17 @@ export function evaluateBatchCards(cards: any[]): {
 /**
  * Generate Avita's greeting / first offer response
  */
-export function generateInitialGreeting(cards: any[], initialOffer: number): string {
+export function generateInitialGreeting(cards: any[], initialOffer: number, userDealsCount = 0): string {
   const formatted = initialOffer.toLocaleString('ru-RU');
+  const trustIntro = userDealsCount >= 3 ? 'Рада снова тебя видеть! ' : '';
+
   if (cards.length === 1) {
     const card = cards[0];
-    if (card.material === 'Holographic') {
-      return `Ого, ${card.material} с узором ${card.category}? Карта редкая и интересная. Предложу ${formatted} ₽. Но учти: такие вещи я оцениваю осторожно.`;
-    }
-    if (card.bank === 'ВБ Банк') {
-      return `Ого, редчайший ${card.bank}! Фирменная ягодная карта с 5% шансом выпадения. Могу предложить ${formatted} ₽.`;
-    }
-    if (['Gold', 'Titanium', 'Black Carbon'].includes(card.material)) {
-      return `Любопытный экземпляр: ${card.bank}, благородный ${card.material}. Могу предложить ${formatted} ₽. Соглашайся, пока предложение действует.`;
-    }
-    return `Посмотрим, что у тебя тут. За эту карту могу предложить ${formatted} ₽. Соглашайся, пока предложение действует.`;
+    const rationale = getValuationRationale(card);
+    return `${trustIntro}Посмотрим, что у тебя тут. ${rationale} Моё начальное предложение — ${formatted} ₽. Согласен?`;
   }
 
-  return `Принёс сразу ${cards.length} карт? За всю подборку готова предложить ${formatted} ₽.`;
+  return `${trustIntro}Принёс сразу ${cards.length} карт? За всю подборку готова предложить ${formatted} ₽. Можем договориться сразу или поторговаться.`;
 }
 
 /**

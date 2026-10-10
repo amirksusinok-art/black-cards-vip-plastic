@@ -104,14 +104,13 @@ export const TopNav: React.FC<TopNavProps> = ({
           </div>
         </div>
 
-        {/* Right: Ruble Balance & Tasks progress pill (with safe margin for Telegram native buttons) */}
-        <div className="flex flex-col items-end gap-1 pr-14 sm:pr-0">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.05] border border-white/10 shadow-sm backdrop-blur-md">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
-            <span className="font-mono font-bold text-sm tracking-tight text-white">
+        {/* Right: Ruble Balance & Tasks progress (matching screenshot 1 pure bold white text, with safe margin for Telegram native overlay buttons) */}
+        <div className="flex flex-col items-end justify-center pr-24 sm:pr-4">
+          <div className="flex items-baseline gap-1">
+            <span className="font-mono font-extrabold text-base sm:text-lg tracking-tight text-white drop-shadow-sm">
               {coins.toLocaleString('ru-RU')}
             </span>
-            <span className="text-xs font-semibold text-amber-300 font-mono">₽</span>
+            <span className="text-sm font-bold text-white/90 font-mono">₽</span>
           </div>
 
           {/* Compact tasks progress */}
@@ -120,7 +119,7 @@ export const TopNav: React.FC<TopNavProps> = ({
               hapticSelection();
               onOpenTasks();
             }}
-            className="flex items-center gap-1 text-[10px] font-medium text-emerald-400/90 hover:text-emerald-300 transition-colors pr-0.5"
+            className="flex items-center gap-1 text-[10px] font-medium text-emerald-400/90 hover:text-emerald-300 transition-colors mt-0.5"
           >
             <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
             <span>{tasksProgress}</span>

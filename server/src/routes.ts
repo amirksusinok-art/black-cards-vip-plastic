@@ -160,8 +160,8 @@ apiRouter.post('/cards/issue', async (req: AuthenticatedRequest, res: Response) 
       const cardUid = 'card_' + crypto.randomBytes(12).toString('hex');
 
       const cardInsert = await client.query(
-        `INSERT INTO cards (card_uid, user_id, bank, material, category, card_number, collection_code, expires_at, collector_score, is_free_roll)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `INSERT INTO cards (card_uid, user_id, bank, material, category, card_number, collection_code, expires_at, collector_score, is_free_roll, serial_number)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING *`,
         [
           cardUid,
@@ -174,6 +174,7 @@ apiRouter.post('/cards/issue', async (req: AuthenticatedRequest, res: Response) 
           generated.expiresAt,
           generated.collectorScore,
           false,
+          generated.serialNumber,
         ]
       );
       const newCard = cardInsert.rows[0];
@@ -257,8 +258,8 @@ apiRouter.post('/cards/free-issue', async (req: AuthenticatedRequest, res: Respo
       const cardUid = 'free_' + crypto.randomBytes(12).toString('hex');
 
       const cardInsert = await client.query(
-        `INSERT INTO cards (card_uid, user_id, bank, material, category, card_number, collection_code, expires_at, collector_score, is_free_roll)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `INSERT INTO cards (card_uid, user_id, bank, material, category, card_number, collection_code, expires_at, collector_score, is_free_roll, serial_number)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING *`,
         [
           cardUid,
@@ -271,6 +272,7 @@ apiRouter.post('/cards/free-issue', async (req: AuthenticatedRequest, res: Respo
           generated.expiresAt,
           generated.collectorScore,
           true,
+          generated.serialNumber,
         ]
       );
       const newCard = cardInsert.rows[0];
@@ -352,8 +354,8 @@ apiRouter.post('/cards/auto-issue', async (req: AuthenticatedRequest, res: Respo
         const cardUid = 'auto_' + crypto.randomBytes(12).toString('hex');
 
         const cardInsert = await client.query(
-          `INSERT INTO cards (card_uid, user_id, bank, material, category, card_number, collection_code, expires_at, collector_score, is_free_roll)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          `INSERT INTO cards (card_uid, user_id, bank, material, category, card_number, collection_code, expires_at, collector_score, is_free_roll, serial_number)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            RETURNING *`,
           [
             cardUid,
@@ -366,6 +368,7 @@ apiRouter.post('/cards/auto-issue', async (req: AuthenticatedRequest, res: Respo
             generated.expiresAt,
             generated.collectorScore,
             false,
+            generated.serialNumber,
           ]
         );
         generatedCards.push(cardInsert.rows[0]);

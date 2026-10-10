@@ -29,6 +29,7 @@ export interface Card {
   expires_at: string;
   collector_score: number;
   is_free_roll: boolean;
+  serial_number?: string;
   created_at: string;
 }
 

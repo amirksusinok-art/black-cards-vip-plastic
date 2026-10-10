@@ -292,9 +292,11 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
 
   // 3. Cards Queries
   if (sql.includes('INSERT INTO cards')) {
-    const [cardUid, userId, bank, material, category, cardNumber, code, expiresAt, score, isFree] = params;
+    const [cardUid, userId, bank, material, category, cardNumber, code, expiresAt, score, isFree, serialNum] = params;
+    const cardId = mockDB.cards.length + 1;
+    const serial = serialNum || `CD-${String(cardId).padStart(6, '0')}`;
     const card = {
-      id: mockDB.cards.length + 1,
+      id: cardId,
       card_uid: cardUid,
       user_id: Number(userId),
       bank,
@@ -305,6 +307,7 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
       expires_at: expiresAt,
       collector_score: Number(score),
       is_free_roll: Boolean(isFree),
+      serial_number: serial,
       created_at: new Date().toISOString()
     };
     mockDB.cards.push(card);
@@ -314,7 +317,9 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
 
   if (sql.includes('FROM cards WHERE user_id =') && sql.includes('ORDER BY created_at DESC')) {
     const userId = params[0];
-    let userCards = mockDB.cards.filter(c => c.user_id === Number(userId) && !c.is_sold);
+    let userCards = mockDB.cards
+      .filter(c => c.user_id === Number(userId) && !c.is_sold)
+      .map(c => ({ ...c, serial_number: c.serial_number || `CD-${String(c.id).padStart(6, '0')}` }));
     
     // Check filters
     if (sql.includes('bank =')) {

@@ -34,6 +34,7 @@ export interface GeneratedCard {
   expiresAt: string;
   collectorScore: number;
   templateKey: string;
+  serialNumber: string;
 }
 
 // 6 Banks: WB Bank at 5%, remaining 5 banks at 19% each (Sum = 100%)
@@ -244,6 +245,14 @@ export function generateCollectionCode(): string {
 }
 
 /**
+ * Unique serial ID in format CD-XXXXXX (e.g. CD-008421)
+ */
+export function generateSerialNumber(): string {
+  const code = secureRandomInt(1, 999999);
+  return `CD-${code.toString().padStart(6, '0')}`;
+}
+
+/**
  * Expiration date: from current month to Dec 2100 inclusive
  */
 export function generateExpiresAt(): string {
@@ -311,6 +320,7 @@ export function generateCard(isFreeRoll = false, isBeginner = false): GeneratedC
 
   const cardNumber = generateCardNumberForCategory(category);
   const collectionCode = generateCollectionCode();
+  const serialNumber = generateSerialNumber();
   const expiresAt = generateExpiresAt();
   const collectorScore = calculateCollectorScore(material, category);
   const templateKey = `${bank}|${material}|${category}|v1`;
@@ -321,6 +331,7 @@ export function generateCard(isFreeRoll = false, isBeginner = false): GeneratedC
     category,
     cardNumber,
     collectionCode,
+    serialNumber,
     expiresAt,
     collectorScore,
     templateKey,

@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, UserProfile } from '../types.js';
 import { CardPreview } from './CardPreview.js';
 import { api } from '../utils/api.js';
-import { hapticImpact, hapticNotification } from '../utils/telegram.js';
+import { hapticImpact, hapticNotification, jackpotHaptics } from '../utils/telegram.js';
+import { playJackpotJingle } from '../utils/audio.js';
 import confetti from 'canvas-confetti';
-import { Play, RotateCw, AlertTriangle, Sparkles, SlidersHorizontal, X, FastForward, TrendingUp } from 'lucide-react';
+import { Play, RotateCw, AlertTriangle, Sparkles, SlidersHorizontal, X, FastForward, TrendingUp, Layers, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface MintTerminalProps {
   user: UserProfile | null;
@@ -22,6 +23,8 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
   const [pendingCard, setPendingCard] = useState<Card | null>(null);
   const [lockedBlockCount, setLockedBlockCount] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isJackpotActive, setIsJackpotActive] = useState<boolean>(false);
+  const [showDetailedCardList, setShowDetailedCardList] = useState<boolean>(false);
 
   // Helper to calculate card market valuation
   const getEstimatedCardPrice = (c: Card | null): number => {
@@ -193,23 +196,36 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
     }
   };
 
+  const handleLockedCountChange = useCallback((count: number) => {
+    setLockedBlockCount(count);
+  }, []);
+
   // Called when ReelAnimation finishes
-  const handleReelComplete = () => {
+  const handleReelComplete = useCallback(() => {
     if (pendingCard) {
       setLatestCard(pendingCard);
-      // Confetti for rare drop
-      if (['Gold', 'Titanium', 'Holographic'].includes(pendingCard.material) || pendingCard.category !== 'Standard') {
+      const isRare =
+        ['Gold', 'Black Carbon', 'Titanium', 'Holographic'].includes(pendingCard.material) ||
+        pendingCard.bank === 'ВБ Банк' ||
+        pendingCard.category !== 'Standard';
+
+      if (isRare) {
+        setIsJackpotActive(true);
+        playJackpotJingle();
+        jackpotHaptics();
+        setTimeout(() => setIsJackpotActive(false), 850);
+
         confetti({
-          particleCount: 70,
-          spread: 70,
+          particleCount: 85,
+          spread: 85,
           origin: { y: 0.6 },
-          colors: ['#D4AF37', '#00FFCC', '#FFFFFF'],
+          colors: ['#D4AF37', '#00FFCC', '#E11D48', '#FFFFFF'],
         });
       }
     }
     setIsRolling(false);
     setPendingCard(null);
-  };
+  }, [pendingCard]);
 
   return (
     <div className="w-full flex flex-col items-center justify-between min-h-[calc(100vh-70px)] px-4 py-4 max-w-md mx-auto select-none">
@@ -226,6 +242,11 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
         </div>
       )}
 
+      {/* Screen Dim & Luxury Jackpot Vignette Flash on Rare Drop */}
+      {isJackpotActive && (
+        <div className="fixed inset-0 z-50 pointer-events-none transition-all duration-300 bg-black/70 backdrop-brightness-75 shadow-[inset_0_0_120px_rgba(212,175,55,0.5)] animate-pulse" />
+      )}
+
       {/* Central Luxury Card with On-Card Slot Reel Generation */}
       <div className="w-full flex flex-col items-center my-auto py-2">
         <CardPreview
@@ -233,7 +254,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
           targetCard={pendingCard}
           isRolling={isRolling && !!pendingCard}
           onRollComplete={handleReelComplete}
-          onLockedCountChange={(count) => setLockedBlockCount(count)}
+          onLockedCountChange={handleLockedCountChange}
           interactive={!isRolling}
           onClick={() => {
             if (isRolling) {
@@ -244,7 +265,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
           }}
         />
 
-        {/* Stable Fixed-Height Action Slot below card with Live Valuation Ticker */}
+        {/* Stable Fixed-Height Action Slot below card with Minimalist Typography (No Pill Buttons) */}
         {(() => {
           const targetEstimatedPrice = getEstimatedCardPrice(pendingCard);
           const currentTickPrice = Math.max(
@@ -264,38 +285,40 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
           );
 
           return (
-            <div className="h-10 mt-2 flex items-center justify-center shrink-0">
+            <div className="h-9 mt-2 flex items-center justify-center shrink-0">
               {isRolling ? (
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.35)] animate-pulse">
+                <div className="flex items-center gap-4 text-xs font-mono">
+                  <div className="flex items-center gap-1.5 text-emerald-400">
                     <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-[11px] font-mono font-medium text-white/90">
-                      Оценка:{' '}
-                      <strong className="text-emerald-300 font-mono text-xs font-black">
-                        +{currentTickPrice.toLocaleString('ru-RU')} ₽
-                      </strong>
-                    </span>
+                    <span className="text-white/70">Оценка:</span>
+                    <strong className="text-emerald-300 font-bold">
+                      +{currentTickPrice.toLocaleString('ru-RU')} ₽
+                    </strong>
                   </div>
                   <button
                     onClick={handleReelComplete}
-                    className="text-[11px] font-mono text-amber-400/90 hover:text-amber-300 bg-white/5 border border-white/10 px-2.5 py-1 rounded-full flex items-center gap-1 active:scale-95 transition-all shadow-sm"
+                    className="text-white/40 hover:text-white/80 active:opacity-60 transition-colors flex items-center gap-1 text-xs underline underline-offset-2"
                   >
-                    <FastForward className="w-3 h-3 text-amber-400" />
+                    <FastForward className="w-3 h-3" />
                     <span>Пропустить</span>
                   </button>
                 </div>
               ) : latestCard ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-bold">
+                <div className="flex items-center gap-3 text-xs font-mono">
+                  <span className="text-emerald-400/90 font-medium">
                     Оценка: ~{getEstimatedCardPrice(latestCard).toLocaleString('ru-RU')} ₽
                   </span>
-                  <p className="text-[11px] text-white/40 font-mono flex items-center gap-1">
+                  <span className="text-white/30">•</span>
+                  <button
+                    onClick={() => onOpenCardDetails(latestCard)}
+                    className="text-white/40 hover:text-white/70 transition-colors flex items-center gap-1"
+                  >
                     <Sparkles className="w-3 h-3 text-amber-400/70" />
-                    Нажмите для просмотра
-                  </p>
+                    <span>Подробнее</span>
+                  </button>
                 </div>
               ) : (
-                <p className="text-[11px] text-white/30 font-mono flex items-center gap-1">
+                <p className="text-xs text-white/30 font-mono">
                   Нажмите «Выпустить карту» для начала
                 </p>
               )}
@@ -482,79 +505,142 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
         </div>
       )}
 
-      {/* Auto-Roll Summary Dialog */}
-      {autoSummary && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
-          <div className="w-full max-w-sm rounded-2xl bg-[#12151D] border border-white/20 p-5 shadow-2xl flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-400" />
-                <h3 className="font-bold text-sm text-white">Итоги автопрокрута</h3>
+      {/* Auto-Roll Summary Dialog with Compact 100-Card Statistics */}
+      {autoSummary && (() => {
+        const materialCounts = autoSummary.cards.reduce((acc, c) => {
+          acc[c.material] = (acc[c.material] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+
+        const categoryCounts = autoSummary.cards.reduce((acc, c) => {
+          acc[c.category] = (acc[c.category] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+
+        const uniqueDesigns = new Set(autoSummary.cards.map((c) => `${c.bank}|${c.material}`)).size;
+        const totalMarketEst = autoSummary.cards.reduce((sum, c) => sum + getEstimatedCardPrice(c), 0);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
+            <div className="w-full max-w-sm rounded-3xl bg-[#12151D] border border-white/20 p-5 shadow-2xl flex flex-col gap-3.5 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-400" />
+                  <h3 className="font-bold text-sm text-white">Статистика серии карт</h3>
+                </div>
+                <button
+                  onClick={() => setAutoSummary(null)}
+                  className="text-white/40 hover:text-white p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
+
+              {/* Compact Overview KPIs */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="p-2.5 rounded-xl bg-white/5 border border-white/5 text-center">
+                  <span className="text-[10px] text-white/50 block font-mono">ВЫПУЩЕНО</span>
+                  <strong className="text-sm font-bold text-white font-mono">{autoSummary.completed}</strong>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white/5 border border-white/5 text-center">
+                  <span className="text-[10px] text-white/50 block font-mono">ДИЗАЙНОВ</span>
+                  <strong className="text-sm font-bold text-cyan-400 font-mono">{uniqueDesigns}</strong>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white/5 border border-white/5 text-center">
+                  <span className="text-[10px] text-white/50 block font-mono">ОЦЕНКА</span>
+                  <strong className="text-xs font-bold text-emerald-400 font-mono">~{totalMarketEst.toLocaleString('ru-RU')} ₽</strong>
+                </div>
+              </div>
+
+              {/* Materials Breakdown */}
+              <div className="flex flex-col gap-1.5 p-3 rounded-2xl bg-black/30 border border-white/5">
+                <span className="text-[11px] font-bold text-white/70 uppercase font-mono tracking-wider flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-amber-400" /> Материалы карт:
+                </span>
+                <div className="grid grid-cols-2 gap-1.5 pt-1">
+                  {Object.entries(materialCounts).map(([mat, count]) => {
+                    const isSuperRare = ['Gold', 'Titanium', 'Holographic', 'Black Carbon'].includes(mat);
+                    return (
+                      <div
+                        key={mat}
+                        className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs font-mono ${
+                          isSuperRare
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 font-bold'
+                            : 'bg-white/5 border-white/5 text-white/80'
+                        }`}
+                      >
+                        <span className="truncate pr-1">{mat}</span>
+                        <strong className="shrink-0">{count} шт.</strong>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Number Categories Breakdown */}
+              <div className="flex flex-col gap-1.5 p-3 rounded-2xl bg-black/30 border border-white/5">
+                <span className="text-[11px] font-bold text-white/70 uppercase font-mono tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" /> Категории номеров:
+                </span>
+                <div className="grid grid-cols-2 gap-1.5 pt-1">
+                  {Object.entries(categoryCounts).map(([cat, count]) => (
+                    <div
+                      key={cat}
+                      className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs font-mono ${
+                        cat !== 'Standard'
+                          ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300 font-bold'
+                          : 'bg-white/5 border-white/5 text-white/70'
+                      }`}
+                    >
+                      <span className="truncate pr-1">{cat}</span>
+                      <strong className="shrink-0">{count} шт.</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Expandable Individual Cards List */}
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => setShowDetailedCardList((prev) => !prev)}
+                  className="w-full py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-xs font-mono flex items-center justify-between transition-colors border border-white/5"
+                >
+                  <span>Показать полный список ({autoSummary.cards.length} карт)</span>
+                  {showDetailedCardList ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+
+                {showDetailedCardList && (
+                  <div className="max-h-40 overflow-y-auto pr-1 flex flex-col gap-1.5 animate-fadeIn">
+                    {autoSummary.cards.map((c, i) => (
+                      <div
+                        key={c.id || i}
+                        onClick={() => {
+                          setAutoSummary(null);
+                          onOpenCardDetails(c);
+                        }}
+                        className="flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer border border-white/5 text-[11px]"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">{c.bank}</span>
+                          <span className="text-white/50">• {c.material}</span>
+                        </div>
+                        <span className="font-mono text-amber-400 font-bold">★ {c.collector_score}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={() => setAutoSummary(null)}
-                className="text-white/40 hover:text-white p-1"
+                className="w-full py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs shadow-md transition-all active:scale-[0.98]"
               >
-                <X className="w-4 h-4" />
+                Отлично
               </button>
             </div>
-
-            <div className="flex flex-col gap-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-white/5">
-                <span className="text-white/50">Выпущено карт:</span>
-                <span className="font-bold text-white font-mono">{autoSummary.completed}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-white/5">
-                <span className="text-white/50">Потрачено монет:</span>
-                <span className="font-bold text-amber-400 font-mono">
-                  {(autoSummary.completed * 500).toLocaleString('ru-RU')} ₽
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-white/5">
-                <span className="text-white/50">Статус завершения:</span>
-                <span
-                  className={`font-semibold ${
-                    autoSummary.stoppedReason === 'COMPLETED'
-                      ? 'text-emerald-400'
-                      : 'text-amber-400'
-                  }`}
-                >
-                  {autoSummary.stoppedReason === 'COMPLETED'
-                    ? 'Завершено полностью'
-                    : autoSummary.stoppedReason}
-                </span>
-              </div>
-            </div>
-
-            {/* List preview of cards issued */}
-            <div className="max-h-40 overflow-y-auto pr-1 flex flex-col gap-1.5">
-              {autoSummary.cards.map((c, i) => (
-                <div
-                  key={c.id || i}
-                  onClick={() => {
-                    setAutoSummary(null);
-                    onOpenCardDetails(c);
-                  }}
-                  className="flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer border border-white/5 text-[11px]"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-white">{c.bank}</span>
-                    <span className="text-white/50">• {c.material}</span>
-                  </div>
-                  <span className="font-mono text-amber-400 font-bold">★ {c.collector_score}</span>
-                </div>
-              ))}
-            </div>
-
-            <button
-              onClick={() => setAutoSummary(null)}
-              className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs"
-            >
-              Закрыть
-            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

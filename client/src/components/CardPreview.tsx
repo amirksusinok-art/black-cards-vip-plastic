@@ -49,6 +49,13 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
   const targetCardNumber = activeCard?.card_number || '2202 8841 9023 5510';
   const expiresAt = activeCard?.expires_at || '12/29';
   const collectionCode = activeCard?.collection_code || '007';
+  const serialNumber = activeCard?.serial_number || (activeCard?.id ? `CD-${String(activeCard.id).padStart(6, '0')}` : 'CD-008421');
+
+  // Callback refs to prevent re-triggering animation on parent re-renders
+  const onRollCompleteRef = useRef(onRollComplete);
+  onRollCompleteRef.current = onRollComplete;
+  const onLockedCountChangeRef = useRef(onLockedCountChange);
+  onLockedCountChangeRef.current = onLockedCountChange;
 
   // Slot Reel Animation State
   const [reelActive, setReelActive] = useState(false);
@@ -58,12 +65,15 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
   // Parse digits into 4 blocks of 4 digits
   const rawDigits = targetCardNumber.replace(/\s+/g, '').split(''); // 16 digits
 
+  // Target card identity key for dependency stability
+  const targetCardKey = targetCard ? targetCard.card_uid || targetCard.id : null;
+
   useEffect(() => {
     if (isRolling && targetCard) {
       setReelActive(false);
       setBankReelActive(false);
       setLockedBlocks(0);
-      if (onLockedCountChange) onLockedCountChange(0);
+      onLockedCountChangeRef.current?.(0);
 
       const startTimer = setTimeout(() => {
         setReelActive(true);
@@ -73,27 +83,27 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
       // Progressive locking timings
       const t1 = setTimeout(() => {
         setLockedBlocks(1);
-        if (onLockedCountChange) onLockedCountChange(1);
+        onLockedCountChangeRef.current?.(1);
         hapticImpact('light');
       }, 650);
 
       const t2 = setTimeout(() => {
         setLockedBlocks(2);
-        if (onLockedCountChange) onLockedCountChange(2);
+        onLockedCountChangeRef.current?.(2);
         hapticImpact('light');
       }, 1250);
 
       const t3 = setTimeout(() => {
         setLockedBlocks(3);
-        if (onLockedCountChange) onLockedCountChange(3);
+        onLockedCountChangeRef.current?.(3);
         hapticImpact('medium');
       }, 1750);
 
       const t4 = setTimeout(() => {
         setLockedBlocks(4);
-        if (onLockedCountChange) onLockedCountChange(4);
+        onLockedCountChangeRef.current?.(4);
         hapticImpact('heavy');
-        if (onRollComplete) onRollComplete();
+        onRollCompleteRef.current?.();
       }, 2300);
 
       return () => {
@@ -108,7 +118,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
       setBankReelActive(false);
       setLockedBlocks(4);
     }
-  }, [isRolling, targetCard, onRollComplete, onLockedCountChange]);
+  }, [isRolling, targetCardKey]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!interactive || isRolling || !cardRef.current) return;
@@ -498,12 +508,18 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
           </div>
         )}
 
-        {/* Expiry & Holder Info */}
+        {/* Expiry & Holder Info & Serial Number */}
         <div
           className={`flex items-end justify-between uppercase tracking-wider text-white/70 font-mono ${
             isCompact ? 'text-[8px] leading-tight' : 'text-[10px] sm:text-[11px]'
           }`}
         >
+          <div>
+            <div className={`${isCompact ? 'text-[6.5px]' : 'text-[8px]'} text-amber-300/60 leading-none mb-0.5 font-bold`}>
+              SERIAL
+            </div>
+            <div className="font-bold text-amber-300 tracking-tight">{serialNumber}</div>
+          </div>
           <div>
             <div className={`${isCompact ? 'text-[6.5px]' : 'text-[8px]'} text-white/40 leading-none mb-0.5`}>
               VALID THRU

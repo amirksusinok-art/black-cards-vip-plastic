@@ -118,6 +118,13 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
           </div>
 
           <div className="flex justify-between py-1 border-b border-white/5">
+            <span className="text-white/40">Серийный номер</span>
+            <span className="font-bold text-amber-300 font-mono">
+              {card.serial_number || `CD-${String(card.id).padStart(6, '0')}`}
+            </span>
+          </div>
+
+          <div className="flex justify-between py-1 border-b border-white/5">
             <span className="text-white/40">Номер карты</span>
             <span className="font-bold text-white">{card.card_number}</span>
           </div>

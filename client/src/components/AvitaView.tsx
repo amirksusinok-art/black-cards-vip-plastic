@@ -382,9 +382,9 @@ export const AvitaView: React.FC<AvitaViewProps> = ({
           {/* Active Dialogue Session View */}
           {session ? (
             <div className="flex flex-col gap-3">
-              {/* Cards Summary in Current Deal */}
-              <div className="p-3.5 rounded-2xl bg-[#14161F] border border-white/10">
-                <div className="flex items-center justify-between text-xs text-white/60 mb-2">
+              {/* Cards Summary in Current Deal with 3-Line Valuation Breakdown */}
+              <div className="p-3.5 rounded-2xl bg-[#14161F] border border-white/10 flex flex-col gap-2.5">
+                <div className="flex items-center justify-between text-xs text-white/60">
                   <span>
                     На оценке: <strong>{session.cards.length} шт.</strong>
                   </span>
@@ -408,6 +408,52 @@ export const AvitaView: React.FC<AvitaViewProps> = ({
                     </div>
                   ))}
                 </div>
+
+                {/* 3-Line Dynamic Valuation Breakdown */}
+                {(() => {
+                  const baseValuation = session.cards.reduce((sum, c) => {
+                    const matBase: Record<string, number> = {
+                      'Classic Plastic': 70,
+                      'Matte Plastic': 130,
+                      'Gold': 1800,
+                      'Black Carbon': 3600,
+                      'Titanium': 9000,
+                      'Holographic': 18000,
+                    };
+                    const catBonus: Record<string, number> = {
+                      'Standard': 0,
+                      'Pair': 100,
+                      'Triple': 250,
+                      'Repeater': 400,
+                      'Straight': 800,
+                      'Quad': 2000,
+                      'Mirror': 12000,
+                    };
+                    const isHigh = ['Titanium', 'Holographic'].includes(c.material);
+                    const mult = isHigh ? 30 : ['Gold', 'Black Carbon'].includes(c.material) ? 15 : 2;
+                    return sum + (matBase[c.material] ?? 70) + (catBonus[c.category] ?? 0) + Math.round((c.collector_score || 20) * mult);
+                  }, 0);
+
+                  const diff = session.currentOffer - baseValuation;
+                  const pct = baseValuation > 0 ? Math.round((diff / baseValuation) * 100) : 0;
+
+                  return (
+                    <div className="pt-2 border-t border-white/5 flex flex-col gap-1 text-[11px] font-mono">
+                      <div className="flex justify-between text-white/50">
+                        <span>1. Коллекционная оценка:</span>
+                        <strong className="text-white/80">{baseValuation.toLocaleString('ru-RU')} ₽</strong>
+                      </div>
+                      <div className="flex justify-between text-amber-300/90 font-medium">
+                        <span>2. Предложение «Авиты»:</span>
+                        <strong className="text-amber-300">{session.currentOffer.toLocaleString('ru-RU')} ₽</strong>
+                      </div>
+                      <div className="flex justify-between text-white/40">
+                        <span>3. Спред / Маржа скупщика:</span>
+                        <span className="text-red-400 font-semibold">{diff.toLocaleString('ru-RU')} ₽ ({pct}%)</span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Chat Dialogue History */}

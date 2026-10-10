@@ -53,6 +53,17 @@ export function hapticSelection() {
   }
 }
 
+/**
+ * Sequential tactile pulses for jackpot / rare drops:
+ * success notification followed by consecutive heavy and rigid impacts
+ */
+export function jackpotHaptics() {
+  hapticNotification('success');
+  setTimeout(() => hapticImpact('heavy'), 120);
+  setTimeout(() => hapticImpact('heavy'), 260);
+  setTimeout(() => hapticImpact('rigid'), 420);
+}
+
 export function getTelegramInitData(): string {
   if (tg?.initData) return tg.initData;
   return '';

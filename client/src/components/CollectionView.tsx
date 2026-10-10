@@ -206,7 +206,7 @@ export const CollectionView: React.FC<CollectionViewProps> = ({
                     <div className="flex flex-col">
                       <span className="text-xs font-bold text-white">{card.bank}</span>
                       <span className="text-[10px] text-white/50 font-mono">
-                        {card.card_number}
+                        {card.serial_number || `CD-${String(card.id).padStart(6, '0')}`} • {card.card_number}
                       </span>
                     </div>
                     <span className="text-xs font-mono font-bold text-amber-400">

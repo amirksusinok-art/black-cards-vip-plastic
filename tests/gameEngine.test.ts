@@ -9,6 +9,7 @@ import {
   BEGINNER_CATEGORIES,
   generateCard,
   generateCardNumberForCategory,
+  generateSerialNumber,
   calculateCollectorScore,
 } from '../server/src/gameEngine.js';
 
@@ -112,5 +113,14 @@ describe('Game Engine Probabilities and Validation', () => {
       expect(BEGINNER_MATERIALS.some((m) => m.name === card.material)).toBe(true);
       expect(BEGINNER_CATEGORIES.some((c) => c.name === card.category)).toBe(true);
     }
+  });
+
+  it('generateSerialNumber generates CD-XXXXXX unique identifier format', () => {
+    for (let i = 0; i < 25; i++) {
+      const serial = generateSerialNumber();
+      expect(serial).toMatch(/^CD-\d{6}$/);
+    }
+    const card = generateCard(false);
+    expect(card.serialNumber).toMatch(/^CD-\d{6}$/);
   });
 });
