@@ -1,17 +1,32 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Card, BankName, MaterialName, CategoryName } from '../types.js';
-import { ShieldCheck, Sparkles, Wifi } from 'lucide-react';
+import { hapticImpact } from '../utils/telegram.js';
+import { Sparkles, Wifi } from 'lucide-react';
 
-interface CardPreviewProps {
+export interface CardPreviewProps {
   card?: Card | null;
+  targetCard?: Card | null;
+  isRolling?: boolean;
+  onRollComplete?: () => void;
   interactive?: boolean;
   className?: string;
   size?: 'normal' | 'large' | 'compact';
   onClick?: () => void;
 }
 
+const ALL_BANKS: BankName[] = [
+  'Алфа Банк',
+  'Тинькоффи',
+  'ЗверьБанк',
+  'ОзановБанк',
+  'ОООтмыв Банк',
+];
+
 export const CardPreview: React.FC<CardPreviewProps> = ({
   card,
+  targetCard,
+  isRolling = false,
+  onRollComplete,
   interactive = true,
   className = '',
   size = 'normal',
@@ -21,16 +36,58 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
   const [rotateX, setRotateX] = useState(0);
   const [rotateY, setRotateY] = useState(0);
 
-  // Defaults if no card passed yet (e.g. initial empty slot or teaser)
-  const bank: BankName = card?.bank || 'Алфа Банк';
-  const material: MaterialName = card?.material || 'Black Carbon';
-  const category: CategoryName = card?.category || 'Standard';
-  const cardNumber = card?.card_number || '2202 8841 9023 5510';
-  const expiresAt = card?.expires_at || '12/29';
-  const collectionCode = card?.collection_code || '007';
+  // Active displayed card data (switches to targetCard when finished or target preview)
+  const activeCard = isRolling && targetCard ? targetCard : card;
+
+  const targetBank: BankName = activeCard?.bank || 'Алфа Банк';
+  const targetMaterial: MaterialName = activeCard?.material || 'Black Carbon';
+  const targetCategory: CategoryName = activeCard?.category || 'Standard';
+  const targetCardNumber = activeCard?.card_number || '2202 8841 9023 5510';
+  const expiresAt = activeCard?.expires_at || '12/29';
+  const collectionCode = activeCard?.collection_code || '007';
+
+  // Slot Reel Animation State
+  const [reelActive, setReelActive] = useState(false);
+  const [bankReelActive, setBankReelActive] = useState(false);
+
+  // Parse digits into 4 blocks of 4 digits
+  const rawDigits = targetCardNumber.replace(/\s+/g, '').split(''); // 16 digits
+
+  useEffect(() => {
+    if (isRolling && targetCard) {
+      // Trigger reel upward motion on card
+      setReelActive(false);
+      setBankReelActive(false);
+
+      const startTimer = setTimeout(() => {
+        setReelActive(true);
+        setBankReelActive(true);
+      }, 50);
+
+      // Progressive haptics
+      const haptic1 = setTimeout(() => hapticImpact('light'), 650);
+      const haptic2 = setTimeout(() => hapticImpact('light'), 1350);
+      const haptic3 = setTimeout(() => hapticImpact('medium'), 1850);
+      const hapticFinal = setTimeout(() => {
+        hapticImpact('heavy');
+        if (onRollComplete) onRollComplete();
+      }, 2350);
+
+      return () => {
+        clearTimeout(startTimer);
+        clearTimeout(haptic1);
+        clearTimeout(haptic2);
+        clearTimeout(haptic3);
+        clearTimeout(hapticFinal);
+      };
+    } else {
+      setReelActive(false);
+      setBankReelActive(false);
+    }
+  }, [isRolling, targetCard, onRollComplete]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!interactive || !cardRef.current) return;
+    if (!interactive || isRolling || !cardRef.current) return;
     const rect = cardRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -72,7 +129,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
       case 'Алфа Банк':
         return {
           emblem: (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 h-6">
               <span className="w-5 h-5 rounded-full bg-red-600 flex items-center justify-center font-black text-white text-[11px] shadow-sm">
                 A
               </span>
@@ -84,7 +141,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
       case 'ЗверьБанк':
         return {
           emblem: (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 h-6">
               <div className="w-5 h-5 rounded-full border-2 border-emerald-400 flex items-center justify-center">
                 <div className="w-2.5 h-2.5 rounded-full bg-emerald-400"></div>
               </div>
@@ -96,7 +153,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
       case 'ОзановБанк':
         return {
           emblem: (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 h-6">
               <div className="w-5 h-5 rounded-md bg-blue-600 flex items-center justify-center font-bold text-white text-[10px]">
                 OZ
               </div>
@@ -108,7 +165,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
       case 'Тинькоффи':
         return {
           emblem: (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 h-6">
               <div className="w-5 h-5 rounded bg-yellow-400 flex items-center justify-center font-black text-black text-[11px]">
                 T
               </div>
@@ -121,7 +178,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
       default:
         return {
           emblem: (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 h-6">
               <div className="w-5 h-5 rounded-full border border-purple-400 flex items-center justify-center text-purple-300 text-[10px] font-mono font-bold">
                 $$
               </div>
@@ -133,7 +190,9 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
     }
   };
 
-  const branding = getBankBranding(bank);
+  // Build vertical bank reel strip
+  const bankStrip = [...ALL_BANKS, ...ALL_BANKS, targetBank];
+  const targetBankIndex = bankStrip.length - 1;
 
   return (
     <div
@@ -142,26 +201,56 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       style={{
-        transform: interactive
-          ? `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`
-          : undefined,
+        transform:
+          interactive && !isRolling
+            ? `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`
+            : undefined,
         transition: rotateX === 0 ? 'transform 0.4s ease-out' : 'none',
       }}
       className={`relative w-full aspect-[1.58/1] max-w-[370px] rounded-2xl border p-5 sm:p-6 flex flex-col justify-between overflow-hidden cursor-pointer select-none transition-shadow duration-300 ${getMaterialStyles(
-        material
-      )} ${className}`}
+        targetMaterial
+      )} ${isRolling ? 'ring-2 ring-amber-400/40 shadow-[0_0_35px_rgba(251,191,36,0.3)]' : ''} ${className}`}
     >
       {/* Specular Glare Overlay */}
       <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent pointer-events-none" />
 
-      {/* Top Row: Bank Emblem & Contactless Wave */}
+      {/* Dynamic Laser / Shimmer during rolling */}
+      {isRolling && (
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-400/20 to-transparent animate-shimmer pointer-events-none" />
+      )}
+
+      {/* Top Row: Bank Emblem (With Slot Reel) & Contactless Wave */}
       <div className="relative z-10 flex items-center justify-between">
-        {branding.emblem}
+        {isRolling ? (
+          /* Animated Bank Slot Reel */
+          <div className="h-6 overflow-hidden relative">
+            <div
+              className="flex flex-col"
+              style={{
+                transform: bankReelActive
+                  ? `translateY(-${targetBankIndex * 24}px)`
+                  : 'translateY(0px)',
+                transition: bankReelActive
+                  ? 'transform 1350ms cubic-bezier(0.12, 0.85, 0.3, 1)'
+                  : 'none',
+              }}
+            >
+              {bankStrip.map((bName, idx) => (
+                <div key={idx} className="h-6 flex items-center">
+                  {getBankBranding(bName).emblem}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          getBankBranding(targetBank).emblem
+        )}
+
         <div className="flex items-center gap-2">
-          {category !== 'Standard' && (
+          {targetCategory !== 'Standard' && (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide bg-white/10 backdrop-blur-md border border-white/15 text-white flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-amber-300" />
-              {category}
+              {targetCategory}
             </span>
           )}
           <Wifi className="w-5 h-5 opacity-70 rotate-90" />
@@ -182,24 +271,80 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
           </div>
         </div>
 
-        {card && (
+        {activeCard && (
           <div className="flex flex-col items-end">
             <span className="text-[10px] text-white/50 uppercase tracking-widest font-mono">
               ОЦЕНКА
             </span>
             <span className="text-xs font-bold font-mono tracking-tight text-white/90">
-              ★ {card.collector_score}
+              ★ {isRolling && !reelActive ? '??' : activeCard.collector_score}
             </span>
           </div>
         )}
       </div>
 
-      {/* Bottom Area: 16-Digit Number & Meta */}
+      {/* Bottom Area: 16-Digit Number (With Slot Reel) & Meta */}
       <div className="relative z-10 flex flex-col gap-2">
-        {/* Card Number */}
-        <div className="font-mono text-lg sm:text-xl font-bold tracking-[0.16em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
-          {cardNumber}
-        </div>
+        {/* Card Number Container */}
+        {isRolling ? (
+          /* On-Card 16-Digit Slot Reel */
+          <div className="flex items-center justify-between font-mono text-lg sm:text-xl font-bold tracking-[0.16em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] h-7 overflow-hidden">
+            {[0, 1, 2, 3].map((blockIdx) => {
+              // Block timing: block 0 locks at 650ms, block 1 at 1250ms, block 2 at 1750ms, block 3 at 2250ms
+              const blockDelay = blockIdx * 180;
+              const blockDuration = 650 + blockIdx * 500;
+
+              return (
+                <div key={blockIdx} className="flex gap-[2px]">
+                  {[0, 1, 2, 3].map((dIdx) => {
+                    const globalIdx = blockIdx * 4 + dIdx;
+                    const finalDigit = parseInt(rawDigits[globalIdx] || '0', 10);
+                    // Strip of digits 0..9 repeating then landing on finalDigit
+                    const digitStrip = [
+                      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+                      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+                      finalDigit,
+                    ];
+                    const targetIdx = digitStrip.length - 1;
+
+                    return (
+                      <div
+                        key={dIdx}
+                        className="w-[11px] sm:w-[13px] h-7 overflow-hidden relative flex flex-col items-center"
+                      >
+                        <div
+                          className="flex flex-col items-center"
+                          style={{
+                            transform: reelActive
+                              ? `translateY(-${targetIdx * 28}px)`
+                              : 'translateY(0px)',
+                            transition: reelActive
+                              ? `transform ${blockDuration}ms cubic-bezier(0.12, 0.85, 0.3, 1) ${blockDelay}ms`
+                              : 'none',
+                          }}
+                        >
+                          {digitStrip.map((num, i) => (
+                            <div
+                              key={i}
+                              className="h-7 flex items-center justify-center font-mono font-bold text-lg sm:text-xl text-white leading-none"
+                            >
+                              {num}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* Static Card Number */
+          <div className="font-mono text-lg sm:text-xl font-bold tracking-[0.16em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+            {targetCardNumber}
+          </div>
+        )}
 
         {/* Expiry & Holder Info */}
         <div className="flex items-end justify-between text-[10px] sm:text-[11px] uppercase tracking-wider text-white/70 font-mono">
@@ -213,7 +358,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
           </div>
           <div className="text-right">
             <div className="text-[8px] text-white/40 leading-none mb-0.5">MATERIAL</div>
-            <div className="font-bold text-white/90">{material}</div>
+            <div className="font-bold text-white/90">{targetMaterial}</div>
           </div>
         </div>
       </div>

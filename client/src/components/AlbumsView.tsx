@@ -78,7 +78,7 @@ export const AlbumsView: React.FC = () => {
                 <div className="flex items-center justify-between text-[11px] font-mono text-white/40">
                   <span>Награда за сбор:</span>
                   <span className="text-amber-400 font-bold flex items-center gap-1">
-                    <Coins className="w-3 h-3" /> +{album.reward_coins} C
+                    <Coins className="w-3 h-3" /> +{album.reward_coins.toLocaleString('ru-RU')} ₽
                   </span>
                 </div>
               </div>

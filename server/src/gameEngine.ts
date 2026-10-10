@@ -81,6 +81,27 @@ export const FREE_CATEGORIES: { name: CategoryName; weight: number }[] = [
   { name: 'Mirror', weight: 0.1 },
 ];
 
+// Beginner roll materials (first 10 spins: 0.5x luck for rare tiers)
+export const BEGINNER_MATERIALS: { name: MaterialName; weight: number }[] = [
+  { name: 'Classic Plastic', weight: 55 },
+  { name: 'Matte Plastic', weight: 30 },
+  { name: 'Gold', weight: 6 },
+  { name: 'Black Carbon', weight: 5 },
+  { name: 'Titanium', weight: 3 },
+  { name: 'Holographic', weight: 1 },
+];
+
+// Beginner roll categories (first 10 spins: 0.5x luck for rare combinations)
+export const BEGINNER_CATEGORIES: { name: CategoryName; weight: number }[] = [
+  { name: 'Standard', weight: 85 },
+  { name: 'Pair', weight: 8 },
+  { name: 'Triple', weight: 3 },
+  { name: 'Repeater', weight: 1.5 },
+  { name: 'Straight', weight: 1 },
+  { name: 'Quad', weight: 1 },
+  { name: 'Mirror', weight: 0.5 },
+];
+
 /**
  * Cryptographically secure random float in [0, 1)
  */
@@ -267,10 +288,19 @@ export function calculateCollectorScore(material: MaterialName, category: Catego
 /**
  * Main Card Generator
  */
-export function generateCard(isFreeRoll = false): GeneratedCard {
+export function generateCard(isFreeRoll = false, isBeginner = false): GeneratedCard {
   const bank = pickWeighted(BANKS);
-  const material = isFreeRoll ? pickWeighted(FREE_MATERIALS) : pickWeighted(STANDARD_MATERIALS);
-  const category = isFreeRoll ? pickWeighted(FREE_CATEGORIES) : pickWeighted(STANDARD_CATEGORIES);
+  const material = isFreeRoll
+    ? pickWeighted(FREE_MATERIALS)
+    : isBeginner
+    ? pickWeighted(BEGINNER_MATERIALS)
+    : pickWeighted(STANDARD_MATERIALS);
+
+  const category = isFreeRoll
+    ? pickWeighted(FREE_CATEGORIES)
+    : isBeginner
+    ? pickWeighted(BEGINNER_CATEGORIES)
+    : pickWeighted(STANDARD_CATEGORIES);
 
   const cardNumber = generateCardNumberForCategory(category);
   const collectionCode = generateCollectionCode();

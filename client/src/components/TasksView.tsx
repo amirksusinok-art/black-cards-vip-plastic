@@ -94,7 +94,7 @@ export const TasksView: React.FC<TasksViewProps> = ({ onRewardClaimed }) => {
                   <div className="flex items-center gap-2 text-xs">
                     <span className="flex items-center gap-1 font-mono text-amber-400 font-bold">
                       <Coins className="w-3 h-3" />
-                      +{task.rewardCoins} C
+                      +{task.rewardCoins.toLocaleString('ru-RU')} ₽
                     </span>
                     <span className="text-white/40 font-mono">
                       ({Math.min(task.currentProgress, task.targetCount)}/{task.targetCount})

@@ -254,7 +254,7 @@ export const AvitaView: React.FC<AvitaViewProps> = ({
       });
 
       alert(
-        `Сделка успешно завершена!\nПродано карт: ${res.cardsSold}\nПолучено: +${res.coinsEarned.toLocaleString()} Coins`
+        `Сделка успешно завершена!\nПродано карт: ${res.cardsSold}\nПолучено: +${res.coinsEarned.toLocaleString('ru-RU')} ₽`
       );
 
       setSession(null);
@@ -323,7 +323,7 @@ export const AvitaView: React.FC<AvitaViewProps> = ({
             <p className="text-xs text-white/60 mt-0.5 line-clamp-1">
               {isBlocked
                 ? 'Обиделась и не общается'
-                : 'Покупает карты за Coins по рыночным правилам'}
+                : 'Покупает карты за рубли (₽) по рыночным правилам'}
             </p>
           </div>
         </div>
@@ -457,7 +457,7 @@ export const AvitaView: React.FC<AvitaViewProps> = ({
                   className="w-full py-4 rounded-2xl font-bold text-sm bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 hover:brightness-110 text-black shadow-lg shadow-emerald-950/40 active:scale-[0.98] transition-all flex items-center justify-center gap-2 border border-emerald-400/30"
                 >
                   <CheckCircle2 className="w-4 h-4 fill-black text-emerald-500" />
-                  ПРОДАТЬ ЗА {session.currentOffer.toLocaleString()} COINS
+                  ПРОДАТЬ ЗА {session.currentOffer.toLocaleString('ru-RU')} ₽
                 </button>
 
                 {/* Bargain Section */}
@@ -510,7 +510,7 @@ export const AvitaView: React.FC<AvitaViewProps> = ({
                             className="py-2 px-1 rounded-xl bg-white/5 hover:bg-amber-500/20 hover:border-amber-500/40 text-amber-300 text-xs font-mono border border-white/10 transition-all text-center"
                           >
                             <span className="text-[10px] text-white/50 block">{label}</span>
-                            <strong>{target.toLocaleString()}</strong>
+                            <strong>{target.toLocaleString('ru-RU')} ₽</strong>
                           </button>
                         );
                       })}
@@ -520,7 +520,7 @@ export const AvitaView: React.FC<AvitaViewProps> = ({
                     <div className="flex gap-2">
                       <input
                         type="number"
-                        placeholder="Своя цена в Coins"
+                        placeholder="Своя цена в ₽"
                         value={customDemand}
                         onChange={(e) =>
                           setCustomDemand(e.target.value ? parseInt(e.target.value, 10) : '')
@@ -700,7 +700,7 @@ export const AvitaView: React.FC<AvitaViewProps> = ({
                     </span>
                   </div>
                   <span className="font-mono font-bold text-emerald-400">
-                    +{deal.finalPrice.toLocaleString()} Coins
+                    +{deal.finalPrice.toLocaleString('ru-RU')} ₽
                   </span>
                 </div>
 

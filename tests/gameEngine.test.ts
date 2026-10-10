@@ -5,6 +5,8 @@ import {
   STANDARD_CATEGORIES,
   FREE_MATERIALS,
   FREE_CATEGORIES,
+  BEGINNER_MATERIALS,
+  BEGINNER_CATEGORIES,
   generateCard,
   generateCardNumberForCategory,
   calculateCollectorScore,
@@ -85,5 +87,28 @@ describe('Game Engine Probabilities and Validation', () => {
 
     const mirrorNum = generateCardNumberForCategory('Mirror');
     expect(mirrorNum.startsWith('2202')).toBe(true);
+  });
+
+  it('Beginner Roll Material probabilities sum exactly to 100%', () => {
+    const sum = BEGINNER_MATERIALS.reduce((acc, m) => acc + m.weight, 0);
+    expect(sum).toBe(100);
+    expect(BEGINNER_MATERIALS.length).toBe(6);
+  });
+
+  it('Beginner Roll Category probabilities sum exactly to 100%', () => {
+    const sum = BEGINNER_CATEGORIES.reduce((acc, c) => acc + c.weight, 0);
+    expect(Math.round(sum * 100) / 100).toBe(100);
+    expect(BEGINNER_CATEGORIES.length).toBe(7);
+  });
+
+  it('generateCard with beginner flag generates valid cards with proper attributes', () => {
+    for (let i = 0; i < 20; i++) {
+      const card = generateCard(false, true);
+      expect(card.cardNumber.startsWith('2202')).toBe(true);
+      expect(card.cardNumber.replace(/\s+/g, '').length).toBe(16);
+      expect(card.collectorScore).toBeGreaterThan(0);
+      expect(BEGINNER_MATERIALS.some((m) => m.name === card.material)).toBe(true);
+      expect(BEGINNER_CATEGORIES.some((c) => c.name === card.category)).toBe(true);
+    }
   });
 });

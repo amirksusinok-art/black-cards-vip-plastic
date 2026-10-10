@@ -148,8 +148,15 @@ apiRouter.post('/cards/issue', async (req: AuthenticatedRequest, res: Response) 
         user.id,
       ]);
 
+      // Beginner roll check: first 10 rolls receive 0.5x luck
+      const countRes = await client.query('SELECT COUNT(*) as count FROM cards WHERE user_id = $1', [
+        user.id,
+      ]);
+      const rollsCount = parseInt(countRes.rows[0]?.count || '0', 10);
+      const isBeginner = rollsCount < 10;
+
       // Generate card
-      const generated = generateCard(false);
+      const generated = generateCard(false, isBeginner);
       const cardUid = 'card_' + crypto.randomBytes(12).toString('hex');
 
       const cardInsert = await client.query(
@@ -327,6 +334,11 @@ apiRouter.post('/cards/auto-issue', async (req: AuthenticatedRequest, res: Respo
       const generatedCards: any[] = [];
       let completedSpins = 0;
 
+      const countRes = await client.query('SELECT COUNT(*) as count FROM cards WHERE user_id = $1', [
+        user.id,
+      ]);
+      const baseRollsCount = parseInt(countRes.rows[0]?.count || '0', 10);
+
       for (let i = 0; i < requestedSpins; i++) {
         if (currentCoins < 500) {
           break;
@@ -335,7 +347,8 @@ apiRouter.post('/cards/auto-issue', async (req: AuthenticatedRequest, res: Respo
         currentCoins -= 500;
         completedSpins++;
 
-        const generated = generateCard(false);
+        const isBeginner = (baseRollsCount + completedSpins) <= 10;
+        const generated = generateCard(false, isBeginner);
         const cardUid = 'auto_' + crypto.randomBytes(12).toString('hex');
 
         const cardInsert = await client.query(

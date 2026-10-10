@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card, UserProfile } from '../types.js';
 import { CardPreview } from './CardPreview.js';
-import { ReelAnimation } from './ReelAnimation.js';
 import { api } from '../utils/api.js';
 import { hapticImpact, hapticNotification } from '../utils/telegram.js';
 import confetti from 'canvas-confetti';
-import { Play, RotateCw, AlertTriangle, Sparkles, SlidersHorizontal, X } from 'lucide-react';
+import { Play, RotateCw, AlertTriangle, Sparkles, SlidersHorizontal, X, FastForward } from 'lucide-react';
 
 interface MintTerminalProps {
   user: UserProfile | null;
@@ -182,15 +181,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
 
   return (
     <div className="w-full flex flex-col items-center justify-between min-h-[calc(100vh-70px)] px-4 py-4 max-w-md mx-auto select-none">
-      {/* 1. Digit Reel Animation when rolling */}
-      {isRolling && pendingCard && (
-        <ReelAnimation
-          card={pendingCard}
-          onComplete={handleReelComplete}
-        />
-      )}
-
-      {/* 2. Error or Warning Banner */}
+      {/* Error or Warning Banner */}
       {errorMessage && (
         <div className="w-full mb-3 p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-200 text-xs flex items-center justify-between animate-fadeIn">
           <div className="flex items-center gap-2">
@@ -203,25 +194,40 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
         </div>
       )}
 
-      {/* 3. Central Luxury Card */}
+      {/* Central Luxury Card with On-Card Slot Reel Generation */}
       <div className="w-full flex flex-col items-center my-auto py-2">
         <CardPreview
           card={latestCard}
-          interactive={true}
+          targetCard={pendingCard}
+          isRolling={isRolling && !!pendingCard}
+          onRollComplete={handleReelComplete}
+          interactive={!isRolling}
           onClick={() => {
-            if (latestCard) onOpenCardDetails(latestCard);
+            if (isRolling) {
+              handleReelComplete();
+            } else if (latestCard) {
+              onOpenCardDetails(latestCard);
+            }
           }}
         />
 
-        {latestCard && (
+        {isRolling ? (
+          <button
+            onClick={handleReelComplete}
+            className="text-xs font-mono text-amber-400/90 hover:text-amber-300 bg-white/5 border border-white/10 px-3.5 py-1.5 rounded-full mt-3 flex items-center gap-1.5 active:scale-95 transition-all shadow-sm"
+          >
+            <FastForward className="w-3.5 h-3.5 text-amber-400" />
+            <span>Пропустить анимацию</span>
+          </button>
+        ) : latestCard ? (
           <p className="text-[11px] text-white/40 font-mono mt-2 flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-amber-400/70" />
             Нажмите на карту для подробного просмотра
           </p>
-        )}
+        ) : null}
       </div>
 
-      {/* 4. Mode & Timer Status Bar */}
+      {/* Mode & Timer Status Bar */}
       <div className="w-full my-3 flex items-center justify-between px-3 py-2 rounded-xl bg-[#12151D] border border-white/5 text-xs font-mono">
         <div className="flex items-center gap-1.5">
           <span
@@ -230,7 +236,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
             }`}
           />
           <span className="text-white/80 font-medium">
-            {isBomzhMode ? 'Режим «БОМЖ» (0 C)' : 'Стандартный выпуск (500 C)'}
+            {isBomzhMode ? 'Режим «БОМЖ» (0 ₽)' : 'Стандартный выпуск (500 ₽)'}
           </span>
         </div>
 
@@ -278,7 +284,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
               ? `ОЖИДАНИЕ ТАЙМЕРА (${cooldown} С)`
               : freeRollsLeft <= 0
               ? 'ЛИМИТ БОМЖ ИСЧЕРПАН'
-              : 'БЕСПЛАТНЫЙ ВЫПУСК (0 C)'}
+              : 'БЕСПЛАТНЫЙ ВЫПУСК (0 ₽)'}
           </button>
         ) : (
           <button
@@ -287,7 +293,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
             className="w-full py-4 rounded-2xl font-bold text-sm tracking-wide bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 hover:brightness-110 text-black shadow-[0_8px_25px_rgba(34,197,94,0.3)] active:scale-[0.98] transition-all flex items-center justify-center gap-2 border border-emerald-400/30"
           >
             <Play className={`w-4 h-4 fill-black ${isRolling ? 'animate-spin' : ''}`} />
-            {isRolling ? 'ВЫПУСК КАРТЫ...' : 'ВЫПУСТИТЬ КАРТУ (500 C)'}
+            {isRolling ? 'ВЫПУСК КАРТЫ...' : 'ВЫПУСТИТЬ КАРТУ (500 ₽)'}
           </button>
         )}
 
@@ -295,7 +301,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
         <button
           onClick={() => {
             if (coins < 500) {
-              setErrorMessage('Недостаточно средств для автопрокрута (нужно от 500 C)');
+              setErrorMessage('Недостаточно средств для автопрокрута (нужно от 500 ₽)');
               hapticNotification('error');
               return;
             }
@@ -334,7 +340,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
             <div className="flex flex-col gap-2">
               <label className="text-[11px] text-white/50 font-mono">
                 КОЛИЧЕСТВО ВЫПУСКОВ: <strong className="text-white">{autoSpinCount}</strong> (Стоимость:{' '}
-                {autoSpinCount * 500} C)
+                {(autoSpinCount * 500).toLocaleString('ru-RU')} ₽)
               </label>
               <div className="grid grid-cols-5 gap-1.5">
                 {[1, 10, 25, 50, 100].map((n) => (
@@ -424,7 +430,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
               <div className="flex justify-between py-1 border-b border-white/5">
                 <span className="text-white/50">Потрачено монет:</span>
                 <span className="font-bold text-amber-400 font-mono">
-                  {autoSummary.completed * 500} C
+                  {(autoSummary.completed * 500).toLocaleString('ru-RU')} ₽
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-white/5">
