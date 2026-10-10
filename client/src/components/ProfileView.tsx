@@ -224,6 +224,35 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetail
               </div>
             </div>
           </div>
+
+          {/* Support & Ideas Section */}
+          <div className="p-4 rounded-2xl bg-[#12151D] border border-cyan-500/20 flex flex-col gap-2">
+            <span className="text-xs font-bold text-cyan-400 uppercase font-mono">
+              💬 Поддержка и предложения
+            </span>
+            <p className="text-xs text-white/70 font-mono leading-relaxed">
+              Вы можете задать вопрос в поддержку написав{' '}
+              <a
+                href="https://t.me/stena10"
+                target="_blank"
+                rel="noreferrer"
+                className="text-cyan-400 font-bold underline hover:text-cyan-300"
+              >
+                @stena10
+              </a>
+            </p>
+            <p className="text-xs text-white/70 font-mono leading-relaxed">
+              Вы можете предложить идею написав{' '}
+              <a
+                href="https://t.me/stena10"
+                target="_blank"
+                rel="noreferrer"
+                className="text-amber-400 font-bold underline hover:text-amber-300"
+              >
+                @stena10
+              </a>
+            </p>
+          </div>
         </div>
       </div>
   );

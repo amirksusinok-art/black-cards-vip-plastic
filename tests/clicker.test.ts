@@ -110,16 +110,16 @@ describe('Clicker System Engine Tests', () => {
 describe('Case Tiers Integration Tests', () => {
   it('has all 4 case tiers configured with matching multipliers', () => {
     expect(CASE_TIERS.standard.price).toBe(500);
-    expect(CASE_TIERS.standard.luckMultiplier).toBe(1.0);
+    expect(CASE_TIERS.standard.luckMultiplier).toBe(0.5);
 
     expect(CASE_TIERS.go.price).toBe(1000);
-    expect(CASE_TIERS.go.luckMultiplier).toBe(1.5);
+    expect(CASE_TIERS.go.luckMultiplier).toBe(1.0);
 
     expect(CASE_TIERS.plus.price).toBe(2000);
-    expect(CASE_TIERS.plus.luckMultiplier).toBe(2.0);
+    expect(CASE_TIERS.plus.luckMultiplier).toBe(1.5);
 
     expect(CASE_TIERS.elite.price).toBe(5000);
-    expect(CASE_TIERS.elite.luckMultiplier).toBe(3.0);
+    expect(CASE_TIERS.elite.luckMultiplier).toBe(2.0);
   });
 
   it('boosts high rarity chances on higher tiers', () => {

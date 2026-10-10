@@ -225,6 +225,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <span>Пройти обучение новичка заново</span>
         </button>
 
+        {/* Support & Ideas Section */}
+        <div className="flex flex-col p-3 rounded-2xl bg-[#141724] border border-cyan-500/20 gap-2 font-mono text-xs">
+          <div className="flex items-center gap-2 text-cyan-400 font-bold">
+            <span>💬 Поддержка и идеи</span>
+          </div>
+          <p className="text-[11px] text-white/70 leading-relaxed">
+            Вы можете задать вопрос в поддержку написав{' '}
+            <a
+              href="https://t.me/stena10"
+              target="_blank"
+              rel="noreferrer"
+              className="text-cyan-400 font-bold underline hover:text-cyan-300"
+            >
+              @stena10
+            </a>
+          </p>
+          <p className="text-[11px] text-white/70 leading-relaxed">
+            Вы можете предложить идею написав{' '}
+            <a
+              href="https://t.me/stena10"
+              target="_blank"
+              rel="noreferrer"
+              className="text-amber-400 font-bold underline hover:text-amber-300"
+            >
+              @stena10
+            </a>
+          </p>
+        </div>
+
         {/* Admin Password Entry Section */}
         <div className="flex flex-col p-3 rounded-2xl bg-[#141724] border border-white/10 gap-2.5 font-mono">
           <div className="flex items-center justify-between">

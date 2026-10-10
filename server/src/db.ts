@@ -143,8 +143,10 @@ function loadMockData(): MockDB {
 }
 
 let mockDB = loadMockData();
+let inTransaction = false;
 
 function saveMockData() {
+  if (inTransaction) return;
   try {
     fs.writeFileSync(mockDbPath, JSON.stringify(mockDB, null, 2), 'utf8');
   } catch (err) {
@@ -224,10 +226,20 @@ export async function withTransaction<T>(callback: (client: DBClient) => Promise
   }
 
   // Mock transaction
-  const client: DBClient = {
-    query: (text, params) => executeMockQuery(text, params)
-  };
-  return callback(client);
+  const prevInTx = inTransaction;
+  inTransaction = true;
+  try {
+    const client: DBClient = {
+      query: (text, params) => executeMockQuery(text, params)
+    };
+    const result = await callback(client);
+    return result;
+  } finally {
+    inTransaction = prevInTx;
+    if (!inTransaction) {
+      saveMockData();
+    }
+  }
 }
 
 /**

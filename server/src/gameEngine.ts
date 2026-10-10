@@ -113,44 +113,84 @@ export const BEGINNER_CATEGORIES: { name: CategoryName; weight: number }[] = [
 export type CaseTier = 'standard' | 'go' | 'plus' | 'elite';
 
 export const CASE_TIERS: Record<CaseTier, { name: string; price: number; luckMultiplier: number }> = {
-  standard: { name: 'Стандарт', price: 500, luckMultiplier: 1.0 },
-  go: { name: 'Go', price: 1000, luckMultiplier: 1.5 },
-  plus: { name: 'Plus', price: 2000, luckMultiplier: 2.0 },
-  elite: { name: 'Элит', price: 5000, luckMultiplier: 3.0 },
+  standard: { name: 'Стандарт', price: 500, luckMultiplier: 0.5 },
+  go: { name: 'Go', price: 1000, luckMultiplier: 1.0 },
+  plus: { name: 'Plus', price: 2000, luckMultiplier: 1.5 },
+  elite: { name: 'Элит', price: 5000, luckMultiplier: 2.0 },
 };
+
+/**
+ * Returns banks weighted according to case tier luck multiplier
+ * WB Bank and offshore banks scale with luck
+ */
+export function getBanksForTier(tier: CaseTier, isAutoRoll = false): { name: BankName; weight: number }[] {
+  let mult = CASE_TIERS[tier]?.luckMultiplier || 0.5;
+  if (isAutoRoll) mult = mult * 0.75;
+
+  const wbWeight = Math.max(1, Math.round(5 * mult));
+  const remaining = Math.max(10, 100 - wbWeight);
+  const eachBank = remaining / 5;
+
+  return [
+    { name: 'Алфа Банк', weight: eachBank },
+    { name: 'ЗверьБанк', weight: eachBank },
+    { name: 'ОзановБанк', weight: eachBank },
+    { name: 'Тинькоффи', weight: eachBank },
+    { name: 'ОООтмыв Банк', weight: eachBank },
+    { name: 'ВБ Банк', weight: wbWeight },
+  ];
+}
 
 /**
  * Returns materials weighted according to case tier luck multiplier
  */
-export function getMaterialsForTier(tier: CaseTier): { name: MaterialName; weight: number }[] {
-  const mult = CASE_TIERS[tier]?.luckMultiplier || 1.0;
-  if (mult === 1.0) return STANDARD_MATERIALS;
+export function getMaterialsForTier(tier: CaseTier, isAutoRoll = false): { name: MaterialName; weight: number }[] {
+  let mult = CASE_TIERS[tier]?.luckMultiplier || 0.5;
+  if (isAutoRoll) mult = mult * 0.75;
+
+  const gold = Math.round(12 * mult);
+  const carbon = Math.round(10 * mult);
+  const titanium = Math.round(6 * mult);
+  const holo = Math.max(0.5, Math.round(2 * mult * 10) / 10);
+  const rareSum = gold + carbon + titanium + holo;
+
+  const matte = Math.max(12, Math.round(25 - (mult - 1.0) * 8));
+  const classic = Math.max(8, Math.round((100 - rareSum - matte) * 10) / 10);
 
   return [
-    { name: 'Classic Plastic', weight: Math.max(10, 45 - (mult - 1) * 15) },
-    { name: 'Matte Plastic', weight: Math.max(10, 25 - (mult - 1) * 8) },
-    { name: 'Gold', weight: Math.round(12 * mult) },
-    { name: 'Black Carbon', weight: Math.round(10 * mult) },
-    { name: 'Titanium', weight: Math.round(6 * mult) },
-    { name: 'Holographic', weight: Math.round(2 * mult) },
+    { name: 'Classic Plastic', weight: classic },
+    { name: 'Matte Plastic', weight: matte },
+    { name: 'Gold', weight: gold },
+    { name: 'Black Carbon', weight: carbon },
+    { name: 'Titanium', weight: titanium },
+    { name: 'Holographic', weight: holo },
   ];
 }
 
 /**
  * Returns categories weighted according to case tier luck multiplier
  */
-export function getCategoriesForTier(tier: CaseTier): { name: CategoryName; weight: number }[] {
-  const mult = CASE_TIERS[tier]?.luckMultiplier || 1.0;
-  if (mult === 1.0) return STANDARD_CATEGORIES;
+export function getCategoriesForTier(tier: CaseTier, isAutoRoll = false): { name: CategoryName; weight: number }[] {
+  let mult = CASE_TIERS[tier]?.luckMultiplier || 0.5;
+  if (isAutoRoll) mult = mult * 0.75;
+
+  const pair = Math.round(16 * mult);
+  const triple = Math.round(6 * mult);
+  const quad = Math.max(1, Math.round(2 * mult));
+  const repeater = Math.max(1.5, Math.round(3 * mult));
+  const straight = Math.max(1, Math.round(2 * mult));
+  const mirror = Math.max(0.5, Math.round(1 * mult));
+  const patternSum = pair + triple + quad + repeater + straight + mirror;
+  const standard = Math.max(15, 100 - patternSum);
 
   return [
-    { name: 'Standard', weight: Math.max(20, 70 - (mult - 1) * 20) },
-    { name: 'Pair', weight: Math.round(16 * mult) },
-    { name: 'Triple', weight: Math.round(6 * mult) },
-    { name: 'Quad', weight: Math.round(2 * mult) },
-    { name: 'Repeater', weight: Math.round(3 * mult) },
-    { name: 'Straight', weight: Math.round(2 * mult) },
-    { name: 'Mirror', weight: Math.round(1 * mult) },
+    { name: 'Standard', weight: standard },
+    { name: 'Pair', weight: pair },
+    { name: 'Triple', weight: triple },
+    { name: 'Quad', weight: quad },
+    { name: 'Repeater', weight: repeater },
+    { name: 'Straight', weight: straight },
+    { name: 'Mirror', weight: mirror },
   ];
 }
 
@@ -280,10 +320,21 @@ export function generateCardNumberForCategory(category: CategoryName): string {
   return `${full.slice(0, 4)} ${full.slice(4, 8)} ${full.slice(8, 12)} ${full.slice(12, 16)}`;
 }
 
+const LUCKY_CVVS = [
+  '777', '042', '007', '111', '999', '666', '001', '123', '888',
+  '555', '333', '222', '444', '707', '343', '818', '100', '200', '500', '321', '067'
+];
+
 /**
- * Random collection code (3 digits e.g. "042")
+ * Random collection code (3 digits e.g. "042" or "777")
+ * Higher luck multiplier increases chance of rolling an iconic/collector CVV
  */
-export function generateCollectionCode(): string {
+export function generateCollectionCode(luckMultiplier = 1.0): string {
+  const luckyChance = 0.05 * luckMultiplier;
+  if (secureRandomFloat() < luckyChance) {
+    const idx = secureRandomInt(0, LUCKY_CVVS.length - 1);
+    return LUCKY_CVVS[idx];
+  }
   const code = secureRandomInt(1, 999);
   return code.toString().padStart(3, '0');
 }
@@ -347,27 +398,36 @@ export function calculateCollectorScore(material: MaterialName, category: Catego
 
 /**
  * Main Card Generator
+ * Supports tier-based luck multipliers (Standard: 0.5x, Go: 1x, Plus: 1.5x, Elite: 2x)
+ * When isAutoRoll = true, luck is reduced by 25% (unannounced)
  */
 export function generateCard(
   isFreeRoll = false,
   isBeginner = false,
-  tier: CaseTier = 'standard'
+  tier: CaseTier = 'standard',
+  isAutoRoll = false
 ): GeneratedCard {
-  const bank = pickWeighted(BANKS);
+  let mult = CASE_TIERS[tier]?.luckMultiplier || 0.5;
+  if (isAutoRoll) mult = mult * 0.75;
+
+  const bank = isFreeRoll || isBeginner
+    ? pickWeighted(BANKS)
+    : pickWeighted(getBanksForTier(tier, isAutoRoll));
+
   const material = isFreeRoll
     ? pickWeighted(FREE_MATERIALS)
     : isBeginner
     ? pickWeighted(BEGINNER_MATERIALS)
-    : pickWeighted(getMaterialsForTier(tier));
+    : pickWeighted(getMaterialsForTier(tier, isAutoRoll));
 
   const category = isFreeRoll
     ? pickWeighted(FREE_CATEGORIES)
     : isBeginner
     ? pickWeighted(BEGINNER_CATEGORIES)
-    : pickWeighted(getCategoriesForTier(tier));
+    : pickWeighted(getCategoriesForTier(tier, isAutoRoll));
 
   const cardNumber = generateCardNumberForCategory(category);
-  const collectionCode = generateCollectionCode();
+  const collectionCode = generateCollectionCode(isFreeRoll || isBeginner ? 0.5 : mult);
   const serialNumber = generateSerialNumber();
   const expiresAt = generateExpiresAt();
   const collectorScore = calculateCollectorScore(material, category);

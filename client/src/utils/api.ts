@@ -63,9 +63,19 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers,
   });
 
-  const data = await res.json();
+  let data: any;
+  const rawText = await res.text();
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    if (!res.ok) {
+      throw new Error(`Ошибка сервера (${res.status}): ${res.statusText || 'Сервер временно недоступен'}`);
+    }
+    throw new Error('Некорректный ответ сервера');
+  }
+
   if (!res.ok || data.success === false) {
-    throw new Error(data.error || 'Ошибка запроса к серверу');
+    throw new Error(data.error || `Ошибка сервера (${res.status})`);
   }
   return data;
 }

@@ -93,7 +93,7 @@ export const AvitaView: React.FC<AvitaViewProps> = ({
   const loadCards = async () => {
     setLoadingCards(true);
     try {
-      const res = await api.getCards({ limit: 80, view: 'all' });
+      const res = await api.getCards({ limit: 200, view: 'all' });
       setCards(res.items || []);
     } catch (err) {
       console.error('Failed to load cards:', err);
@@ -144,6 +144,12 @@ export const AvitaView: React.FC<AvitaViewProps> = ({
       return;
     }
 
+    if (!selectedCardIds.includes(card.id) && selectedCardIds.length >= 200) {
+      setErrorMessage('Максимум 200 карт за одну сделку');
+      hapticNotification('warning');
+      return;
+    }
+
     setErrorMessage(null);
     hapticImpact('light');
     setSelectedCardIds((prev) =>
@@ -151,13 +157,14 @@ export const AvitaView: React.FC<AvitaViewProps> = ({
     );
   };
 
-  // Select all non-free, non-favorite cards
+  // Select all non-free, non-favorite cards (up to 200)
   const selectAllEligible = () => {
     if (session) return;
     const favs = new Set(user?.favorites || []);
     const eligibleIds = cards
       .filter((c) => !c.is_free_roll && !favs.has(c.id))
-      .map((c) => c.id);
+      .map((c) => c.id)
+      .slice(0, 200);
     setSelectedCardIds(eligibleIds);
     hapticImpact('medium');
   };
@@ -595,7 +602,10 @@ export const AvitaView: React.FC<AvitaViewProps> = ({
               {/* Selection Bar */}
               <div className="flex items-center justify-between px-1">
                 <span className="text-xs font-bold text-white tracking-wide">
-                  Выберите карты для продажи:
+                  Выберите карты (до 200 шт.):{' '}
+                  {selectedCardIds.length > 0 && (
+                    <span className="text-amber-400 font-mono">({selectedCardIds.length}/200)</span>
+                  )}
                 </span>
                 <div className="flex items-center gap-2">
                   <button

@@ -512,7 +512,7 @@ apiRouter.post('/cards/auto-issue', async (req: AuthenticatedRequest, res: Respo
         completedSpins++;
 
         const isBeginner = (baseRollsCount + completedSpins) <= 10;
-        const generated = generateCard(false, isBeginner, selectedTier);
+        const generated = generateCard(false, isBeginner, selectedTier, true);
         const cardUid = 'auto_' + crypto.randomBytes(12).toString('hex');
 
         const cardInsert = await client.query(
@@ -580,7 +580,7 @@ apiRouter.post('/cards/auto-issue', async (req: AuthenticatedRequest, res: Respo
 // GET /api/cards — Paginated Collection with Filters & Grouping
 apiRouter.get('/cards', async (req: AuthenticatedRequest, res: Response) => {
   const page = Math.max(parseInt((req.query.page as string) || '1', 10), 1);
-  const limit = Math.min(parseInt((req.query.limit as string) || '40', 10), 100);
+  const limit = Math.min(parseInt((req.query.limit as string) || '40', 10), 200);
   const bank = req.query.bank as BankName | undefined;
   const material = req.query.material as MaterialName | undefined;
   const category = req.query.category as CategoryName | undefined;
@@ -1079,6 +1079,9 @@ apiRouter.post('/avita/quote', async (req: AuthenticatedRequest, res: Response) 
   const { cardIds } = req.body;
   if (!cardIds || !Array.isArray(cardIds) || cardIds.length === 0) {
     return res.status(400).json({ success: false, error: 'Выберите хотя бы одну карту для оценки' });
+  }
+  if (cardIds.length > 200) {
+    return res.status(400).json({ success: false, error: 'Максимум 200 карт за одну сделку' });
   }
 
   try {
@@ -1942,19 +1945,22 @@ apiRouter.post('/clicker/claim-task', async (req: AuthenticatedRequest, res: Res
 });
 
 // Helper for Card Rarity Scoring (Leaderboard)
-function getCardRarityWeight(material: string, pattern: string): number {
-  let matScore = 1000;
-  if (material === 'Platinum') matScore = 4000;
-  else if (material === 'Gold') matScore = 3000;
-  else if (material === 'Silver') matScore = 2000;
-  else if (material === 'Bronze') matScore = 1200;
+function getCardRarityWeight(material: string, category: string): number {
+  let matScore = 100;
+  if (material === 'Holographic') matScore = 5000;
+  else if (material === 'Titanium') matScore = 3500;
+  else if (material === 'Black Carbon') matScore = 2500;
+  else if (material === 'Gold') matScore = 1800;
+  else if (material === 'Matte Plastic') matScore = 300;
 
   let patScore = 50;
-  const p = (pattern || '').toLowerCase();
-  if (p.includes('777') || p.includes('jackpot')) patScore = 800;
-  else if (p.includes('mirror') || p.includes('radar')) patScore = 500;
-  else if (p.includes('quad')) patScore = 300;
-  else if (p.includes('triple')) patScore = 150;
+  const c = (category || '').toLowerCase();
+  if (c.includes('mirror')) patScore = 2500;
+  else if (c.includes('quad')) patScore = 1500;
+  else if (c.includes('straight')) patScore = 900;
+  else if (c.includes('repeater')) patScore = 600;
+  else if (c.includes('triple')) patScore = 400;
+  else if (c.includes('pair')) patScore = 200;
 
   return matScore + patScore;
 }
@@ -2006,8 +2012,9 @@ apiRouter.get('/leaderboard', async (req: AuthenticatedRequest, res: Response) =
         for (const card of mock.cards || []) {
           if (card.is_sold) continue;
           const uId = Number(card.user_id);
-          const rWeight = getCardRarityWeight(card.material, card.number_pattern);
-          const est = Number(card.estimated_value) || 0;
+          const cat = card.category || card.number_pattern || 'Standard';
+          const rWeight = getCardRarityWeight(card.material, cat) + (Number(card.collector_score) || 0) * 10;
+          const est = calculateRecommendedPrice(card).avgPrice || Math.max(100, (card.collector_score || 20) * 25);
           const existing = userBestMap[uId];
           if (!existing || rWeight > existing.rWeight || (rWeight === existing.rWeight && est > existing.est)) {
             userBestMap[uId] = { card, rWeight, est };
@@ -2019,6 +2026,7 @@ apiRouter.get('/leaderboard', async (req: AuthenticatedRequest, res: Response) =
             const uId = Number(uIdStr);
             const u = mock.users.find((userItem) => Number(userItem.id) === uId);
             const { card, rWeight, est } = userBestMap[uId];
+            const serialId = card.serial_number || card.serial_id || `CD-${String(card.id).padStart(6, '0')}`;
             return {
               userId: uId,
               telegramId: u?.telegram_id || 0,
@@ -2030,10 +2038,11 @@ apiRouter.get('/leaderboard', async (req: AuthenticatedRequest, res: Response) =
               formattedScore: `${est.toLocaleString('ru-RU')} ₽`,
               cardMeta: {
                 id: card.id,
-                serialId: card.serial_id || `CD-${String(card.id).padStart(6, '0')}`,
+                serialId,
                 bank: card.bank,
                 material: card.material,
-                numberPattern: card.number_pattern,
+                numberPattern: card.category || card.number_pattern,
+                category: card.category,
                 cardNumber: card.card_number,
                 estimatedValue: est,
               },
@@ -2084,48 +2093,57 @@ apiRouter.get('/leaderboard', async (req: AuthenticatedRequest, res: Response) =
         const resBest = await query(
           `WITH user_best_cards AS (
              SELECT DISTINCT ON (c.user_id)
-               c.user_id, c.id AS card_id, c.serial_id, c.bank, c.material,
-               c.number_pattern, c.card_number, c.estimated_value,
-               (CASE WHEN c.material = 'Platinum' THEN 4000
-                     WHEN c.material = 'Gold' THEN 3000
-                     WHEN c.material = 'Silver' THEN 2000
-                     WHEN c.material = 'Bronze' THEN 1200
-                     ELSE 1000 END +
-                CASE WHEN c.number_pattern ILIKE '%777%' OR c.number_pattern ILIKE '%jackpot%' THEN 800
-                     WHEN c.number_pattern ILIKE '%mirror%' OR c.number_pattern ILIKE '%radar%' THEN 500
-                     WHEN c.number_pattern ILIKE '%quad%' THEN 300
-                     WHEN c.number_pattern ILIKE '%triple%' THEN 150
-                     ELSE 50 END) AS rarity_score
+               c.user_id, c.id AS card_id, c.serial_number, c.bank, c.material,
+               c.category, c.card_number, c.collector_score,
+               (CASE WHEN c.material = 'Holographic' THEN 18000
+                     WHEN c.material = 'Titanium' THEN 9000
+                     WHEN c.material = 'Black Carbon' THEN 3600
+                     WHEN c.material = 'Gold' THEN 1800
+                     WHEN c.material = 'Matte Plastic' THEN 250
+                     ELSE 100 END +
+                CASE WHEN c.category = 'Mirror' THEN 12000
+                     WHEN c.category = 'Quad' THEN 2500
+                     WHEN c.category = 'Straight' THEN 1000
+                     WHEN c.category = 'Repeater' THEN 500
+                     WHEN c.category = 'Triple' THEN 300
+                     WHEN c.category = 'Pair' THEN 150
+                     ELSE 0 END +
+                COALESCE(c.collector_score, 20) * 10) AS estimated_calc
              FROM cards c
-             WHERE c.is_sold = false
-             ORDER BY c.user_id, rarity_score DESC, c.estimated_value DESC, c.id ASC
+             WHERE c.is_sold = false OR c.is_sold IS NULL
+             ORDER BY c.user_id, estimated_calc DESC, c.id ASC
            )
            SELECT u.id, u.telegram_id, u.username, u.first_name, u.photo_url,
-                  ub.card_id, ub.serial_id, ub.bank, ub.material, ub.number_pattern,
-                  ub.card_number, ub.estimated_value, ub.rarity_score
+                  ub.card_id, ub.serial_number, ub.bank, ub.material, ub.category,
+                  ub.card_number, ub.collector_score, ub.estimated_calc
            FROM user_best_cards ub
            JOIN users u ON u.id = ub.user_id
-           ORDER BY ub.rarity_score DESC, ub.estimated_value DESC, u.id ASC
+           ORDER BY ub.estimated_calc DESC, u.id ASC
            LIMIT 200`
         );
-        allRanked = resBest.rows.map((row) => ({
-          userId: row.id,
-          telegramId: row.telegram_id,
-          username: row.username || 'VIP Игрок',
-          firstName: row.first_name || row.username || 'Игрок',
-          photoUrl: row.photo_url || null,
-          score: Number(row.estimated_value) || 0,
-          formattedScore: `${(Number(row.estimated_value) || 0).toLocaleString('ru-RU')} ₽`,
-          cardMeta: {
-            id: row.card_id,
-            serialId: row.serial_id || `CD-${String(row.card_id).padStart(6, '0')}`,
-            bank: row.bank,
-            material: row.material,
-            numberPattern: row.number_pattern,
-            cardNumber: row.card_number,
-            estimatedValue: Number(row.estimated_value) || 0,
-          },
-        }));
+        allRanked = resBest.rows.map((row) => {
+          const est = Number(row.estimated_calc) || 100;
+          const serialId = row.serial_number || `CD-${String(row.card_id).padStart(6, '0')}`;
+          return {
+            userId: row.id,
+            telegramId: row.telegram_id,
+            username: row.username || 'VIP Игрок',
+            firstName: row.first_name || row.username || 'Игрок',
+            photoUrl: row.photo_url || null,
+            score: est,
+            formattedScore: `${est.toLocaleString('ru-RU')} ₽`,
+            cardMeta: {
+              id: row.card_id,
+              serialId,
+              bank: row.bank,
+              material: row.material,
+              category: row.category,
+              numberPattern: row.category,
+              cardNumber: row.card_number,
+              estimatedValue: est,
+            },
+          };
+        });
       }
     }
 
