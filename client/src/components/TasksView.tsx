@@ -36,12 +36,16 @@ export const TasksView: React.FC<TasksViewProps> = ({ onRewardClaimed }) => {
     try {
       await api.claimTask(taskId);
       hapticNotification('success');
-      confetti({
-        particleCount: 40,
-        spread: 60,
-        origin: { y: 0.5 },
-        colors: ['#22C55E', '#FBBF24', '#FFFFFF'],
-      });
+      try {
+        confetti({
+          particleCount: 40,
+          spread: 60,
+          origin: { y: 0.5 },
+          colors: ['#22C55E', '#FBBF24', '#FFFFFF'],
+        });
+      } catch (e) {
+        console.warn(e);
+      }
       loadTasks();
       onRewardClaimed();
     } catch (err: any) {
@@ -56,6 +60,8 @@ export const TasksView: React.FC<TasksViewProps> = ({ onRewardClaimed }) => {
     .filter((t) => t.isClaimed)
     .reduce((sum, t) => sum + t.rewardCoins, 0);
 
+  const totalPossibleCoins = tasks.reduce((sum, t) => sum + t.rewardCoins, 0);
+
   return (
     <div className="w-full flex flex-col p-4 max-w-md mx-auto select-none animate-fadeIn">
       {/* Header Banner */}
@@ -66,7 +72,10 @@ export const TasksView: React.FC<TasksViewProps> = ({ onRewardClaimed }) => {
             Ежедневные задания
           </h2>
           <p className="text-xs text-white/50 mt-0.5">
-            Заработано сегодня: <span className="font-mono text-amber-400 font-bold">{totalRewardsClaimed} / 500 C</span>
+            Заработано сегодня:{' '}
+            <span className="font-mono text-amber-400 font-bold">
+              {totalRewardsClaimed} / {totalPossibleCoins || 1100} C
+            </span>
           </p>
         </div>
         <div className="flex items-center gap-1 text-[11px] font-mono text-white/40">

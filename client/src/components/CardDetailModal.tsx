@@ -21,16 +21,20 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
 
   const handleShare = () => {
     hapticImpact('light');
-    const shareText = `💳 Моя карта в CardDrop:\nБанк: ${card.bank}\nМатериал: ${card.material}\nУзор: ${card.category}\nНомер: ${card.card_number}\nОценка: ★ ${card.collector_score}`;
-    
+    const botUrl = 'https://t.me/thecardgamedrop_bot';
+    const shareText = `Смотри что выбил! 💳\nКарта в CardDrop (@thecardgamedrop_bot):\nБанк: ${card.bank}\nМатериал: ${card.material}\nУзор: ${card.category}\nНомер: ${card.card_number}\nОценка: ★ ${card.collector_score}`;
+
+    // Track daily task for sharing
+    api.recordTaskProgress?.('share_card', 1).catch(() => {});
+
     if (window.Telegram?.WebApp?.openTelegramLink) {
       window.Telegram.WebApp.openTelegramLink(
-        `https://t.me/share/url?url=${encodeURIComponent('https://t.me/your_bot')}&text=${encodeURIComponent(
+        `https://t.me/share/url?url=${encodeURIComponent(botUrl)}&text=${encodeURIComponent(
           shareText
         )}`
       );
     } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(shareText);
+      navigator.clipboard.writeText(`${shareText}\n${botUrl}`);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }

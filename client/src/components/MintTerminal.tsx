@@ -457,48 +457,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
         })()}
       </div>
 
-      {/* Mode & Timer Status Bar */}
-      <div className="w-full my-1.5 flex items-center justify-between px-3 py-2 rounded-xl bg-[#12151D] border border-white/5 text-xs font-mono">
-        <div className="flex items-center gap-1.5">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              isBomzhMode ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
-            }`}
-          />
-          <span className="text-white/80 font-medium">
-            {isBomzhMode
-              ? 'Режим «БОМЖ» (0 ₽)'
-              : `Кейс «${currentTierConfig.name}» (${currentTierConfig.price.toLocaleString('ru-RU')} ₽)`}
-          </span>
-        </div>
 
-        {isBomzhMode ? (
-          <span className="text-white/60 text-[11px]">
-            {cooldown > 0 ? `Таймер: ${cooldown}с` : `Готов (${freeRollsLeft}/150)`}
-          </span>
-        ) : (
-          <span className="text-emerald-400 text-[11px] font-bold">
-            Удача {currentTierConfig.badge}
-          </span>
-        )}
-      </div>
-
-      {/* 5. Two Compact Panels (Bank & Material of last drop) - Perfectly Centered */}
-      <div className="w-full grid grid-cols-2 gap-2 mb-1.5">
-        <div className="flex flex-col items-center justify-center text-center p-2 rounded-xl bg-[#12151D] border border-white/5">
-          <span className="text-[10px] text-white/40 uppercase font-mono">БАНК</span>
-          <span className="text-xs font-bold text-white/90 truncate mt-0.5">
-            {latestCard ? latestCard.bank : '—'}
-          </span>
-        </div>
-
-        <div className="flex flex-col items-center justify-center text-center p-2 rounded-xl bg-[#12151D] border border-white/5">
-          <span className="text-[10px] text-white/40 uppercase font-mono">МАТЕРИАЛ</span>
-          <span className="text-xs font-bold text-white/90 truncate mt-0.5">
-            {latestCard ? latestCard.material : '—'}
-          </span>
-        </div>
-      </div>
 
       {/* Case Tiers Selector (Стандарт, Go, Plus, Элит) */}
       {!isBomzhMode && (

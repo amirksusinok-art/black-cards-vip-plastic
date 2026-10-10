@@ -162,4 +162,17 @@ describe('Server & Security Integration Tests', () => {
       expect(ut.is_claimed).toBe(true);
     }
   });
+
+  it('Guarantees all 7 daily tasks exist (including 4 new active player tasks)', async () => {
+    const tasksRes = await query('SELECT * FROM daily_tasks');
+    const taskKeys = tasksRes.rows.map((t: any) => t.task_key);
+    expect(taskKeys).toContain('daily_login');
+    expect(taskKeys).toContain('roll_3_cards');
+    expect(taskKeys).toContain('daily_mission');
+    expect(taskKeys).toContain('clicker_50');
+    expect(taskKeys).toContain('sell_avita');
+    expect(taskKeys).toContain('share_card');
+    expect(taskKeys).toContain('mint_rare');
+    expect(tasksRes.rowCount).toBeGreaterThanOrEqual(7);
+  });
 });

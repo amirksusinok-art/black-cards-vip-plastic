@@ -42,16 +42,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetail
 
   const handleShareProfile = () => {
     hapticImpact('light');
-    const shareText = `🔥 Мой профиль в CardDrop: Black Cards & Коллекции!\nУровень: ${user?.level || 1}\nКарт в коллекции: ${user?.totalCards || 0}\nПрисоединяйся к выпуску карт!`;
+    const botUrl = 'https://t.me/thecardgamedrop_bot';
+    const shareText = `🔥 Мой профиль в CardDrop: Black Cards & Коллекции (@thecardgamedrop_bot)!\nУровень: ${user?.level || 1}\nКарт в коллекции: ${user?.totalCards || 0}\nЗаходи сам: @thecardgamedrop_bot`;
     
     if (window.Telegram?.WebApp?.openTelegramLink) {
       window.Telegram.WebApp.openTelegramLink(
-        `https://t.me/share/url?url=${encodeURIComponent('https://t.me/your_bot')}&text=${encodeURIComponent(
+        `https://t.me/share/url?url=${encodeURIComponent(botUrl)}&text=${encodeURIComponent(
           shareText
         )}`
       );
     } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(shareText);
+      navigator.clipboard.writeText(`${shareText}\n${botUrl}`);
       alert('Ссылка на профиль скопирована!');
     }
   };

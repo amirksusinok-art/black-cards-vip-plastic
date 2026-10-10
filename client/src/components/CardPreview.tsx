@@ -69,10 +69,31 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
     Array.from({ length: 16 }, () => Math.floor(Math.random() * 10))
   );
 
+  const ALL_MATERIALS: MaterialName[] = [
+    'Classic Plastic',
+    'Matte Plastic',
+    'Gold',
+    'Black Carbon',
+    'Titanium',
+    'Holographic',
+  ];
+
+  // Rolling meta state for bottom strip
+  const [rollingSerial, setRollingSerial] = useState('CD-008421');
+  const [rollingExpiry, setRollingExpiry] = useState('12/29');
+  const [rollingCode, setRollingCode] = useState('007');
+  const [rollingMaterial, setRollingMaterial] = useState<MaterialName>('Classic Plastic');
+
   useEffect(() => {
     if (!isRolling) return;
     const interval = setInterval(() => {
       setTickerDigits(Array.from({ length: 16 }, () => Math.floor(Math.random() * 10)));
+      setRollingSerial(`CD-${Math.floor(Math.random() * 900000 + 100000)}`);
+      setRollingExpiry(
+        `${String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')}/${Math.floor(Math.random() * 6) + 28}`
+      );
+      setRollingCode(`${Math.floor(Math.random() * 900 + 100)}`);
+      setRollingMaterial(ALL_MATERIALS[Math.floor(Math.random() * ALL_MATERIALS.length)]);
     }, 45);
     return () => clearInterval(interval);
   }, [isRolling]);
@@ -423,24 +444,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
           </div>
         </div>
 
-        <div className={`${isCompact ? 'h-6' : 'h-8'} flex flex-col items-end justify-center shrink-0`}>
-          {activeCard && (
-            <>
-              {!isCompact && (
-                <span className="text-[10px] text-white/50 uppercase tracking-widest font-mono">
-                  ОЦЕНКА
-                </span>
-              )}
-              <span
-                className={`font-bold font-mono tracking-tight text-white/90 ${
-                  isCompact ? 'text-[10px]' : 'text-xs'
-                }`}
-              >
-                ★ {isRolling ? rollingScore : activeCard.collector_score}
-              </span>
-            </>
-          )}
-        </div>
+        <div className={`${isCompact ? 'h-6' : 'h-8'} shrink-0`} />
       </div>
 
       {/* Bottom Area: 16-Digit Number (With Slot Reel) & Meta */}
@@ -542,37 +546,104 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
           </div>
         )}
 
-        {/* Expiry & Holder Info & Serial Number */}
-        <div
-          className={`flex items-end justify-between uppercase tracking-wider text-white/70 font-mono ${
-            isCompact ? 'text-[8px] leading-tight' : 'text-[10px] sm:text-[11px]'
-          }`}
-        >
-          <div>
-            <div className={`${isCompact ? 'text-[6.5px]' : 'text-[8px]'} text-amber-300/60 leading-none mb-0.5 font-bold`}>
-              SERIAL
+        {/* Expiry & Holder Info & Serial Number (With Slot Reel & Sequential Locking) */}
+        {(() => {
+          const isSerialLocked = !isRolling || lockedBlocks >= 1;
+          const displaySerial = isSerialLocked ? serialNumber : rollingSerial;
+
+          const isExpiryLocked = !isRolling || lockedBlocks >= 2;
+          const displayExpiry = isExpiryLocked ? expiresAt : rollingExpiry;
+
+          const isCodeLocked = !isRolling || lockedBlocks >= 3;
+          const displayCode = isCodeLocked ? collectionCode : rollingCode;
+
+          const isMaterialLocked = !isRolling || lockedBlocks >= 4;
+          const displayMaterial = isMaterialLocked ? targetMaterial : rollingMaterial;
+
+          return (
+            <div
+              className={`flex items-end justify-between uppercase tracking-wider font-mono ${
+                isCompact ? 'text-[8px] leading-tight' : 'text-[10px] sm:text-[11px]'
+              }`}
+            >
+              <div>
+                <div
+                  className={`${
+                    isCompact ? 'text-[6.5px]' : 'text-[8px]'
+                  } text-amber-300/60 leading-none mb-0.5 font-bold`}
+                >
+                  SERIAL
+                </div>
+                <div
+                  className={`font-bold tracking-tight transition-colors ${
+                    isSerialLocked
+                      ? 'text-amber-300 animate-lockPop'
+                      : 'text-amber-200/70 animate-pulse'
+                  }`}
+                >
+                  {displaySerial}
+                </div>
+              </div>
+
+              <div>
+                <div
+                  className={`${
+                    isCompact ? 'text-[6.5px]' : 'text-[8px]'
+                  } text-white/40 leading-none mb-0.5`}
+                >
+                  VALID THRU
+                </div>
+                <div
+                  className={`font-bold transition-colors ${
+                    isExpiryLocked
+                      ? 'text-white/90 animate-lockPop'
+                      : 'text-white/50 animate-pulse'
+                  }`}
+                >
+                  {displayExpiry}
+                </div>
+              </div>
+
+              <div>
+                <div
+                  className={`${
+                    isCompact ? 'text-[6.5px]' : 'text-[8px]'
+                  } text-white/40 leading-none mb-0.5`}
+                >
+                  CODE
+                </div>
+                <div
+                  className={`font-bold transition-colors ${
+                    isCodeLocked
+                      ? 'text-white/90 animate-lockPop'
+                      : 'text-white/50 animate-pulse'
+                  }`}
+                >
+                  {displayCode}
+                </div>
+              </div>
+
+              <div className="text-right">
+                <div
+                  className={`${
+                    isCompact ? 'text-[6.5px]' : 'text-[8px]'
+                  } text-white/40 leading-none mb-0.5`}
+                >
+                  MATERIAL
+                </div>
+                <div
+                  className={`font-bold transition-colors ${
+                    isMaterialLocked
+                      ? 'text-white/90 animate-lockPop'
+                      : 'text-cyan-300/70 animate-pulse'
+                  }`}
+                >
+                  {displayMaterial}
+                </div>
+              </div>
             </div>
-            <div className="font-bold text-amber-300 tracking-tight">{serialNumber}</div>
-          </div>
-          <div>
-            <div className={`${isCompact ? 'text-[6.5px]' : 'text-[8px]'} text-white/40 leading-none mb-0.5`}>
-              VALID THRU
-            </div>
-            <div className="font-bold text-white/90">{expiresAt}</div>
-          </div>
-          <div>
-            <div className={`${isCompact ? 'text-[6.5px]' : 'text-[8px]'} text-white/40 leading-none mb-0.5`}>
-              CODE
-            </div>
-            <div className="font-bold text-white/90">{collectionCode}</div>
-          </div>
-          <div className="text-right">
-            <div className={`${isCompact ? 'text-[6.5px]' : 'text-[8px]'} text-white/40 leading-none mb-0.5`}>
-              MATERIAL
-            </div>
-            <div className="font-bold text-white/90">{targetMaterial}</div>
-          </div>
-        </div>
+          );
+        })()}
       </div>
     </div>
   );

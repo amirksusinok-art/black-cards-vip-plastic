@@ -173,17 +173,65 @@ export function evaluateBatchCards(cards: any[]): {
 /**
  * Generate Avita's greeting / first offer response
  */
+/**
+ * Generate Avita's greeting / first offer response
+ */
 export function generateInitialGreeting(cards: any[], initialOffer: number, userDealsCount = 0): string {
   const formatted = initialOffer.toLocaleString('ru-RU');
-  const trustIntro = userDealsCount >= 3 ? 'Рада снова тебя видеть! ' : '';
+  const trustIntro = userDealsCount >= 5 ? 'О, постоянный клиент! Рада видеть. ' : userDealsCount >= 2 ? 'Снова ты? Отлично. ' : '';
 
   if (cards.length === 1) {
     const card = cards[0];
+    const mat = card.material || 'Classic Plastic';
+    const cat = card.category || 'Standard';
+    const bank = card.bank || 'Алфа Банк';
+
+    // 1. Super rare material or special combination
+    if (['Holographic', 'Titanium'].includes(mat) || ['Mirror', 'Quad'].includes(cat)) {
+      const rareGreetings = [
+        `${trustIntro}Постой-ка... ${mat} и ${cat}? Такое я не каждый день вижу! За эту карту готова предложить больше обычного: ${formatted} ₽. По рукам?`,
+        `${trustIntro}Ого, тяжёлая артиллерия! Настоящий ${mat}. За такой экземпляр клиенты подерутся. Моё открытие — ${formatted} ₽.`,
+        `${trustIntro}Вот это находка! Редкость зашкаливает. Отдаю ${formatted} ₽ прямо с порога — по рукам или поторгуемся?`,
+      ];
+      return rareGreetings[Math.floor(Math.random() * rareGreetings.length)];
+    }
+
+    // 2. Exclusive WB Bank
+    if (bank === 'ВБ Банк') {
+      const wbGreetings = [
+        `${trustIntro}О, фирменный ВБ Банк! 5% шанс на дроп, коллекционеры за ним охотятся. Начнём с ${formatted} ₽, давай обсуждать.`,
+        `${trustIntro}Пурпурный ВБ Банк? Редкая птица на вторичке. Даю ${formatted} ₽ для старта. Договоримся?`,
+      ];
+      return wbGreetings[Math.floor(Math.random() * wbGreetings.length)];
+    }
+
+    // 3. Gold or Black Carbon
+    if (['Gold', 'Black Carbon'].includes(mat)) {
+      const goldGreetings = [
+        `${trustIntro}Приятный металл, ${mat} всегда в цене. Стартую с ${formatted} ₽. Что скажешь?`,
+        `${trustIntro}Хм, отличный блеск. За такой ${mat} не жалко отдать ${formatted} ₽. Торгуемся?`,
+      ];
+      return goldGreetings[Math.floor(Math.random() * goldGreetings.length)];
+    }
+
+    // 4. Standard common cards
     const rationale = getValuationRationale(card);
-    return `${trustIntro}Посмотрим, что у тебя тут. ${rationale} Моё начальное предложение — ${formatted} ₽. Согласен?`;
+    const commonGreetings = [
+      `${trustIntro}Хм, неплохая карта. Начнём с ${formatted} ₽. Посмотрим, насколько мы с тобой сговорчивые.`,
+      `${trustIntro}Посмотрим, что у тебя тут. ${rationale} Моё начальное предложение — ${formatted} ₽. Согласен?`,
+      `${trustIntro}Обычный рабочий пластик. Для коллекции сгодится. Моё первое предложение — ${formatted} ₽. Забираешь?`,
+      `${trustIntro}Вижу, решил разгрузить карманы. ${mat}, узор ${cat}. Готова отдать ${formatted} ₽ прямо сейчас.`,
+    ];
+    return commonGreetings[Math.floor(Math.random() * commonGreetings.length)];
   }
 
-  return `${trustIntro}Принёс сразу ${cards.length} карт? За всю подборку готова предложить ${formatted} ₽. Можем договориться сразу или поторговаться.`;
+  // Multiple cards batch
+  const batchGreetings = [
+    `${trustIntro}Ого, оптовая партия из ${cards.length} карт! Люблю скупать объёмами. За всю подборку дам ${formatted} ₽. Договоримся?`,
+    `${trustIntro}Принёс сразу ${cards.length} карт? За всю подборку готова предложить ${formatted} ₽. Можем договориться сразу или поторговаться.`,
+    `${trustIntro}Солидная пачка! За все ${cards.length} карт выложу ${formatted} ₽ одной суммой. По рукам?`,
+  ];
+  return batchGreetings[Math.floor(Math.random() * batchGreetings.length)];
 }
 
 /**
@@ -205,22 +253,32 @@ export function processBargainRound(params: {
 
   // Case 1: Player agrees or asks for less/equal to current offer
   if (playerDemand <= currentOffer) {
+    const successReplies = [
+      `По рукам! Сделка завершена. Забирай свои ${currentOffer.toLocaleString('ru-RU')} ₽.`,
+      `По рукам! Договорились, перевожу ${currentOffer.toLocaleString('ru-RU')} ₽. Приятно иметь дело!`,
+      `По рукам! Отлично сторговались, твои ${currentOffer.toLocaleString('ru-RU')} ₽ уже на счету. Приноси ещё!`,
+    ];
     return {
       accepted: true,
       rejected: false,
       newOffer: currentOffer,
-      avitaReply: `По рукам! Сделка завершена. Забирай свои ${currentOffer.toLocaleString('ru-RU')} ₽.`,
+      avitaReply: successReplies[Math.floor(Math.random() * successReplies.length)],
       isLastRound: false,
     };
   }
 
   // Case 2: Player asks for insane price (> 2.2x maxOffer) -> Immediate walkout & block
   if (playerDemand > maxOffer * 2.2) {
+    const outrageReplies = [
+      `Ты продаёшь карту или собираешься купить весь мой магазин? Давай вернёмся к разумным цифрам. Сделка сорвана! Отдохни две минуты.`,
+      `Нет, за такую цену (${playerDemand.toLocaleString('ru-RU')} ₽) я брать не буду. Мы не договорились. Возвращайся через две минуты, если захочешь попробовать ещё раз.`,
+      `${playerDemand.toLocaleString('ru-RU')} ₽?! Ты с луны свалился? Я скупщик, а не благотворительный фонд. Возвращайся через две минуты, когда пыл остынет!`,
+    ];
     return {
       accepted: false,
       rejected: true,
       newOffer: currentOffer,
-      avitaReply: `Нет, за такую цену (${playerDemand.toLocaleString('ru-RU')} ₽) я брать не буду. Мы не договорились. Возвращайся через две минуты, если захочешь попробовать ещё раз.`,
+      avitaReply: outrageReplies[Math.floor(Math.random() * outrageReplies.length)],
       isLastRound: true,
     };
   }
@@ -230,11 +288,16 @@ export function processBargainRound(params: {
     if (round >= 3) {
       // In round 3, accept player's fair price or give max offer
       const finalPrice = Math.min(playerDemand, maxOffer);
+      const finalAcceptReplies = [
+        `Упрямый ты. Ладно, ${finalPrice.toLocaleString('ru-RU')} ₽ — забирай, по рукам!`,
+        `Выжал из меня максимум! ${finalPrice.toLocaleString('ru-RU')} ₽ — и мы квиты. Забирай монеты, по рукам!`,
+        `Сдаюсь! Твоя взяла: ${finalPrice.toLocaleString('ru-RU')} ₽. По рукам, с тобой приятно торговаться!`,
+      ];
       return {
         accepted: true,
         rejected: false,
         newOffer: finalPrice,
-        avitaReply: `Упрямый ты. Ладно, ${finalPrice.toLocaleString('ru-RU')} ₽ — забирай, по рукам!`,
+        avitaReply: finalAcceptReplies[Math.floor(Math.random() * finalAcceptReplies.length)],
         isLastRound: true,
       };
     }
@@ -243,11 +306,17 @@ export function processBargainRound(params: {
     const step = Math.max(Math.round(((playerDemand - currentOffer) * 0.6) / 10) * 10, 10);
     const raisedOffer = Math.min(currentOffer + step, maxOffer);
 
+    const midRaiseReplies = [
+      `${playerDemand.toLocaleString('ru-RU')} ₽? Ты, видимо, считаешь, что у меня денег бесконечно. Могу поднять до ${raisedOffer.toLocaleString('ru-RU')} ₽. Выше пока не готова.`,
+      `Торговаться ты умеешь, признаю. Но аппетиты умерь. Могу поднять до ${raisedOffer.toLocaleString('ru-RU')} ₽. Что скажешь?`,
+      `Хитро, но мой бюджет не резиновый. Могу поднять до ${raisedOffer.toLocaleString('ru-RU')} ₽. Это честная цена.`,
+    ];
+
     return {
       accepted: false,
       rejected: false,
       newOffer: raisedOffer,
-      avitaReply: `${playerDemand.toLocaleString('ru-RU')} ₽? Ты, видимо, считаешь, что у меня денег бесконечно. Могу поднять до ${raisedOffer.toLocaleString('ru-RU')} ₽. Выше пока не готова.`,
+      avitaReply: midRaiseReplies[Math.floor(Math.random() * midRaiseReplies.length)],
       isLastRound: round === 2,
     };
   }
@@ -255,11 +324,16 @@ export function processBargainRound(params: {
   // Case 4: Player asks for price > maxOffer
   if (round >= 3) {
     // 3rd round exceeded -> Final refusal & 120s block!
+    const walkoutReplies = [
+      `Тогда не договорились. Я предложила максимум ${maxOffer.toLocaleString('ru-RU')} ₽. Возвращайся через две минуты, возможно в другой раз найдём общую цену.`,
+      `За ${playerDemand.toLocaleString('ru-RU')} ₽ я её потом полгода продавать буду. Я предложила крайние ${maxOffer.toLocaleString('ru-RU')} ₽. Сделки не будет, возвращайся через две минуты.`,
+      `Жадность — плохой советчик. Мой абсолютный потолок был ${maxOffer.toLocaleString('ru-RU')} ₽. Возвращайся через две минуты.`,
+    ];
     return {
       accepted: false,
       rejected: true,
       newOffer: maxOffer,
-      avitaReply: `Тогда не договорились. Я предложила максимум ${maxOffer.toLocaleString('ru-RU')} ₽. Возвращайся через две минуты, возможно в другой раз найдём общую цену.`,
+      avitaReply: walkoutReplies[Math.floor(Math.random() * walkoutReplies.length)],
       isLastRound: true,
     };
   }

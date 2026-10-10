@@ -142,6 +142,12 @@ export const api = {
       method: 'POST',
     }),
 
+  recordTaskProgress: (taskKey: string, amount: number = 1) =>
+    request<{ success: boolean }>('/tasks/progress', {
+      method: 'POST',
+      body: JSON.stringify({ taskKey, amount }),
+    }),
+
   getAlbums: () => request<{ success: boolean; albums: AlbumItem[] }>('/albums'),
 
   getShop: () => request<{ success: boolean; items: CosmeticItem[] }>('/shop'),

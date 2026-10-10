@@ -86,9 +86,43 @@ async function ensureDailyLoginTask(clientOrQuery: any, userId: number) {
 }
 
 /**
+ * Helper: Increment specific daily task progress
+ */
+async function recordTaskProgress(client: any, userId: number, taskKey: string, amount: number = 1) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const tRes = await client.query('SELECT * FROM daily_tasks WHERE task_key = $1', [taskKey]);
+    if (tRes.rowCount > 0) {
+      const task = tRes.rows[0];
+      const utRes = await client.query(
+        'SELECT * FROM user_tasks WHERE user_id = $1 AND task_id = $2 AND task_date = $3',
+        [userId, task.id, today]
+      );
+      if (utRes.rowCount === 0) {
+        const currentProgress = Math.min(task.target_count, amount);
+        await client.query(
+          `INSERT INTO user_tasks (user_id, task_id, current_progress, is_claimed, task_date)
+           VALUES ($1, $2, $3, false, $4)`,
+          [userId, task.id, currentProgress, today]
+        );
+      } else {
+        const ut = utRes.rows[0];
+        const currentProgress = Math.min(task.target_count, (ut.current_progress || 0) + amount);
+        await client.query(
+          'UPDATE user_tasks SET current_progress = $1 WHERE id = $2',
+          [currentProgress, ut.id]
+        );
+      }
+    }
+  } catch (err) {
+    console.warn(`Failed to update task progress for ${taskKey}:`, err);
+  }
+}
+
+/**
  * Helper: Increment roll_3_cards and check daily_mission task progress
  */
-async function recordCardIssueTaskProgress(client: any, userId: number, count: number = 1) {
+async function recordCardIssueTaskProgress(client: any, userId: number, count: number = 1, cards: any[] = []) {
   try {
     const today = new Date().toISOString().slice(0, 10);
     // Find task 2 (roll_3_cards)
@@ -136,6 +170,14 @@ async function recordCardIssueTaskProgress(client: any, userId: number, count: n
           }
         }
       }
+    }
+
+    // Check mint_rare: if any minted card is Gold or above
+    const hasRare = cards.some((c) =>
+      ['Gold', 'Black Carbon', 'Titanium', 'Holographic'].includes(c.material)
+    );
+    if (hasRare) {
+      await recordTaskProgress(client, userId, 'mint_rare', 1);
     }
   } catch (err) {
     console.error('Error tracking card issue task progress:', err);
@@ -296,7 +338,7 @@ apiRouter.post('/cards/issue', async (req: AuthenticatedRequest, res: Response) 
       );
 
       // Record daily task progress
-      await recordCardIssueTaskProgress(client, user.id, 1);
+      await recordCardIssueTaskProgress(client, user.id, 1, [newCard]);
 
       return payload;
     });
@@ -409,7 +451,7 @@ apiRouter.post('/cards/free-issue', async (req: AuthenticatedRequest, res: Respo
       );
 
       // Record daily task progress
-      await recordCardIssueTaskProgress(client, user.id, 1);
+      await recordCardIssueTaskProgress(client, user.id, 1, [newCard]);
 
       return payload;
     });
@@ -515,7 +557,7 @@ apiRouter.post('/cards/auto-issue', async (req: AuthenticatedRequest, res: Respo
 
       // Record daily task progress
       if (completedSpins > 0) {
-        await recordCardIssueTaskProgress(client, user.id, completedSpins);
+        await recordCardIssueTaskProgress(client, user.id, completedSpins, generatedCards);
       }
 
       return payload;
@@ -721,6 +763,24 @@ apiRouter.get('/tasks', async (req: AuthenticatedRequest, res: Response) => {
     });
 
     res.json({ success: true, tasks });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/tasks/progress — Record custom action progress (e.g. share_card)
+apiRouter.post('/tasks/progress', async (req: AuthenticatedRequest, res: Response) => {
+  const { taskKey, amount } = req.body;
+  if (!taskKey) {
+    return res.status(400).json({ success: false, error: 'taskKey обязателен' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    await withTransaction(async (client) => {
+      await recordTaskProgress(client, user.id, taskKey, amount || 1);
+    });
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -1301,6 +1361,9 @@ apiRouter.post('/avita/accept', async (req: AuthenticatedRequest, res: Response)
         [dealId, user.id, validCards.length, JSON.stringify(cardsSummary), finalPrice]
       );
 
+      // Track sell_avita daily task
+      await recordTaskProgress(client, user.id, 'sell_avita', 1);
+
       return {
         coinsEarned: finalPrice,
         cardsSold: validCards.length,
@@ -1590,6 +1653,9 @@ apiRouter.post('/clicker/tap', async (req: AuthenticatedRequest, res: Response) 
         [tapResult.coinsEarned, Math.ceil(tapResult.allowedTaps / 2), user.id]
       );
       const newCoins = uRes.rows[0].coins;
+
+      // Track clicker daily task
+      await recordTaskProgress(client, user.id, 'clicker_50', tapResult.allowedTaps);
 
       return {
         tapsProcessed: tapResult.allowedTaps,

@@ -60,7 +60,11 @@ function loadMockData(): MockDB {
     daily_tasks: [
       { id: 1, task_key: 'daily_login', title: 'Войти в игру', reward_coins: 50, target_count: 1, task_type: 'login' },
       { id: 2, task_key: 'roll_3_cards', title: 'Выпустить три карты', reward_coins: 150, target_count: 3, task_type: 'rolls' },
-      { id: 3, task_key: 'daily_mission', title: 'Задание дня', reward_coins: 300, target_count: 1, task_type: 'mission' }
+      { id: 3, task_key: 'daily_mission', title: 'Задание дня', reward_coins: 300, target_count: 1, task_type: 'mission' },
+      { id: 4, task_key: 'clicker_50', title: 'Сделать 50 кликов по монете', reward_coins: 100, target_count: 50, task_type: 'clicker' },
+      { id: 5, task_key: 'sell_avita', title: 'Продать карту скупщику Авита', reward_coins: 150, target_count: 1, task_type: 'avita' },
+      { id: 6, task_key: 'share_card', title: 'Поделиться картой с другом', reward_coins: 100, target_count: 1, task_type: 'share' },
+      { id: 7, task_key: 'mint_rare', title: 'Выбить карту Gold или выше', reward_coins: 250, target_count: 1, task_type: 'mint_rare' },
     ],
     user_tasks: [],
     free_rolls: [],
@@ -87,9 +91,16 @@ function loadMockData(): MockDB {
   try {
     if (fs.existsSync(mockDbPath)) {
       const parsed = JSON.parse(fs.readFileSync(mockDbPath, 'utf8'));
+      const existingTasks = Array.isArray(parsed.daily_tasks) ? parsed.daily_tasks : [];
+      for (const dt of defaultData.daily_tasks) {
+        if (!existingTasks.some((t: any) => t.task_key === dt.task_key)) {
+          existingTasks.push(dt);
+        }
+      }
       return {
         ...defaultData,
         ...parsed,
+        daily_tasks: existingTasks,
         user_clicker: Array.isArray(parsed.user_clicker) ? parsed.user_clicker : [],
         avita_sessions: Array.isArray(parsed.avita_sessions) ? parsed.avita_sessions : [],
         avita_deals: Array.isArray(parsed.avita_deals) ? parsed.avita_deals : [],
