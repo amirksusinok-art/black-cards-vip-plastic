@@ -1,0 +1,813 @@
+import { Router, Response } from 'express';
+import crypto from 'crypto';
+import { AuthenticatedRequest } from './auth.js';
+import { query, withTransaction } from './db.js';
+import { generateCard, BankName, MaterialName, CategoryName } from './gameEngine.js';
+
+export const apiRouter = Router();
+
+// Health Check
+apiRouter.get('/health', async (req, res) => {
+  try {
+    await query('SELECT 1');
+    res.json({
+      status: 'ok',
+      service: 'CardDrop / Black Cards & VIP Plastic',
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+// Helper: Get or Create User
+async function getOrCreateUser(telegramUser: any) {
+  let userRes = await query('SELECT * FROM users WHERE telegram_id = $1', [telegramUser.id]);
+  if (userRes.rowCount === 0) {
+    userRes = await query(
+      `INSERT INTO users (telegram_id, username, first_name, last_name, photo_url, coins, level, exp)
+       VALUES ($1, $2, $3, $4, $5, 1500, 1, 0)
+       RETURNING *`,
+      [
+        telegramUser.id,
+        telegramUser.username || `user_${telegramUser.id}`,
+        telegramUser.first_name || 'VIP Player',
+        telegramUser.last_name || '',
+        telegramUser.photo_url || '',
+      ]
+    );
+  }
+  return userRes.rows[0];
+}
+
+// GET /api/me — Profile & Balance
+apiRouter.get('/me', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    // Get active tasks progress
+    const today = new Date().toISOString().slice(0, 10);
+    const userTasksRes = await query(
+      'SELECT * FROM user_tasks WHERE user_id = $1 AND task_date = $2',
+      [user.id, today]
+    );
+
+    // Get free rolls stats
+    const freeRollsRes = await query(
+      'SELECT * FROM free_rolls WHERE user_id = $1 AND roll_date = $2',
+      [user.id, today]
+    );
+    const freeRollData = freeRollsRes.rows[0] || { daily_count: 0, last_roll_at: null };
+
+    // Seconds remaining for free roll cooldown (30s)
+    let freeRollCooldownSeconds = 0;
+    if (freeRollData.last_roll_at) {
+      const elapsed = Math.floor((Date.now() - new Date(freeRollData.last_roll_at).getTime()) / 1000);
+      if (elapsed < 30) {
+        freeRollCooldownSeconds = 30 - elapsed;
+      }
+    }
+
+    // Favorites
+    const favRes = await query('SELECT card_id FROM user_favorites WHERE user_id = $1', [user.id]);
+    const favorites = favRes.rows.map((r: any) => r.card_id);
+
+    // Total unique cards count
+    const cardsRes = await query('SELECT COUNT(*) as count FROM cards WHERE user_id = $1', [user.id]);
+    const totalCards = parseInt(cardsRes.rows[0]?.count || '0', 10);
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        telegramId: user.telegram_id,
+        username: user.username,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        photoUrl: user.photo_url,
+        coins: user.coins,
+        level: user.level,
+        exp: user.exp,
+        totalCards,
+        favorites,
+        freeRollsToday: freeRollData.daily_count,
+        maxFreeRolls: 150,
+        freeRollCooldownSeconds,
+        tasksProgress: `${userTasksRes.rows.filter((t: any) => t.is_claimed).length} из 3 заданий`,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/cards/issue — Regular Roll (Costs 500 Coins, Idempotent)
+apiRouter.post('/cards/issue', async (req: AuthenticatedRequest, res: Response) => {
+  const { requestId } = req.body;
+  if (!requestId) {
+    return res.status(400).json({ success: false, error: 'Missing requestId' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    // 1. Check idempotency: if operation already succeeded, return stored result
+    const existingOp = await query('SELECT * FROM operations WHERE request_id = $1', [requestId]);
+    if (existingOp.rowCount > 0) {
+      return res.json({
+        success: true,
+        isIdempotentReplay: true,
+        ...existingOp.rows[0].response_payload,
+      });
+    }
+
+    // 2. Atomic roll transaction
+    const result = await withTransaction(async (client) => {
+      // Re-check user balance with row lock
+      const uRes = await client.query('SELECT * FROM users WHERE id = $1', [user.id]);
+      const freshUser = uRes.rows[0];
+
+      if (freshUser.coins < 500) {
+        throw new Error('Недостаточно средств: требуется 500 Coins');
+      }
+
+      // Deduct coins
+      const newBalance = freshUser.coins - 500;
+      await client.query('UPDATE users SET coins = $1, exp = exp + 10 WHERE id = $2', [
+        newBalance,
+        user.id,
+      ]);
+
+      // Generate card
+      const generated = generateCard(false);
+      const cardUid = 'card_' + crypto.randomBytes(12).toString('hex');
+
+      const cardInsert = await client.query(
+        `INSERT INTO cards (card_uid, user_id, bank, material, category, card_number, collection_code, expires_at, collector_score, is_free_roll)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING *`,
+        [
+          cardUid,
+          user.id,
+          generated.bank,
+          generated.material,
+          generated.category,
+          generated.cardNumber,
+          generated.collectionCode,
+          generated.expiresAt,
+          generated.collectorScore,
+          false,
+        ]
+      );
+      const newCard = cardInsert.rows[0];
+
+      // Save operation for idempotency
+      const payload = {
+        card: newCard,
+        coinsRemaining: newBalance,
+      };
+
+      await client.query(
+        `INSERT INTO operations (request_id, user_id, action_type, response_payload)
+         VALUES ($1, $2, 'issue_card', $3)`,
+        [requestId, user.id, JSON.stringify(payload)]
+      );
+
+      return payload;
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/cards/free-issue — BOMZH Free Roll
+apiRouter.post('/cards/free-issue', async (req: AuthenticatedRequest, res: Response) => {
+  const { requestId } = req.body;
+  if (!requestId) {
+    return res.status(400).json({ success: false, error: 'Missing requestId' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    // 1. Check idempotency
+    const existingOp = await query('SELECT * FROM operations WHERE request_id = $1', [requestId]);
+    if (existingOp.rowCount > 0) {
+      return res.json({
+        success: true,
+        isIdempotentReplay: true,
+        ...existingOp.rows[0].response_payload,
+      });
+    }
+
+    // 2. Validate BOMZH requirements
+    if (user.coins >= 500) {
+      return res.status(400).json({
+        success: false,
+        error: 'Бесплатный режим «БОМЖ» доступен только при балансе менее 500 Coins',
+      });
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const frRes = await query(
+      'SELECT * FROM free_rolls WHERE user_id = $1 AND roll_date = $2',
+      [user.id, today]
+    );
+    const frData = frRes.rows[0];
+
+    if (frData) {
+      if (frData.daily_count >= 150) {
+        return res.status(400).json({
+          success: false,
+          error: 'Достигнут суточный лимит 150 бесплатных выпусков',
+        });
+      }
+
+      const elapsed = Math.floor((Date.now() - new Date(frData.last_roll_at).getTime()) / 1000);
+      if (elapsed < 30) {
+        return res.status(400).json({
+          success: false,
+          error: `Подождите еще ${30 - elapsed} сек. перед бесплатным выпуском`,
+        });
+      }
+    }
+
+    // 3. Atomic free roll transaction
+    const result = await withTransaction(async (client) => {
+      const generated = generateCard(true); // BOMZH probabilities (x0.1 luck)
+      const cardUid = 'free_' + crypto.randomBytes(12).toString('hex');
+
+      const cardInsert = await client.query(
+        `INSERT INTO cards (card_uid, user_id, bank, material, category, card_number, collection_code, expires_at, collector_score, is_free_roll)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING *`,
+        [
+          cardUid,
+          user.id,
+          generated.bank,
+          generated.material,
+          generated.category,
+          generated.cardNumber,
+          generated.collectionCode,
+          generated.expiresAt,
+          generated.collectorScore,
+          true,
+        ]
+      );
+      const newCard = cardInsert.rows[0];
+
+      // Update free_rolls record
+      const newCount = (frData?.daily_count || 0) + 1;
+      const nowIso = new Date().toISOString();
+      await client.query(
+        `INSERT INTO free_rolls (user_id, roll_date, daily_count, last_roll_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (user_id, roll_date)
+         DO UPDATE SET daily_count = $3, last_roll_at = $4`,
+        [user.id, today, newCount, nowIso]
+      );
+
+      const payload = {
+        card: newCard,
+        freeRollsUsed: newCount,
+        freeRollsLeft: 150 - newCount,
+        coinsRemaining: user.coins,
+      };
+
+      await client.query(
+        `INSERT INTO operations (request_id, user_id, action_type, response_payload)
+         VALUES ($1, $2, 'free_issue_card', $3)`,
+        [requestId, user.id, JSON.stringify(payload)]
+      );
+
+      return payload;
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/cards/auto-issue — Auto-Roll (up to 100 spins, accelerated, stops on insufficient funds)
+apiRouter.post('/cards/auto-issue', async (req: AuthenticatedRequest, res: Response) => {
+  const { count, requestId } = req.body;
+  const requestedSpins = Math.min(Math.max(parseInt(count || '1', 10), 1), 100);
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    if (user.coins < 500) {
+      return res.status(400).json({
+        success: false,
+        error: 'Недостаточно средств',
+        stoppedReason: 'INSUFFICIENT_FUNDS',
+        spinsCompleted: 0,
+        cards: [],
+      });
+    }
+
+    const result = await withTransaction(async (client) => {
+      // Re-read user
+      const uRes = await client.query('SELECT * FROM users WHERE id = $1', [user.id]);
+      let currentCoins = uRes.rows[0].coins;
+
+      const generatedCards: any[] = [];
+      let completedSpins = 0;
+
+      for (let i = 0; i < requestedSpins; i++) {
+        if (currentCoins < 500) {
+          break;
+        }
+
+        currentCoins -= 500;
+        completedSpins++;
+
+        const generated = generateCard(false);
+        const cardUid = 'auto_' + crypto.randomBytes(12).toString('hex');
+
+        const cardInsert = await client.query(
+          `INSERT INTO cards (card_uid, user_id, bank, material, category, card_number, collection_code, expires_at, collector_score, is_free_roll)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING *`,
+          [
+            cardUid,
+            user.id,
+            generated.bank,
+            generated.material,
+            generated.category,
+            generated.cardNumber,
+            generated.collectionCode,
+            generated.expiresAt,
+            generated.collectorScore,
+            false,
+          ]
+        );
+        generatedCards.push(cardInsert.rows[0]);
+      }
+
+      // Update user coins & exp
+      await client.query('UPDATE users SET coins = $1, exp = exp + $2 WHERE id = $3', [
+        currentCoins,
+        completedSpins * 10,
+        user.id,
+      ]);
+
+      const stoppedReason =
+        completedSpins < requestedSpins ? 'Недостаточно средств' : 'COMPLETED';
+
+      const payload = {
+        requestedSpins,
+        spinsCompleted: completedSpins,
+        stoppedReason,
+        coinsRemaining: currentCoins,
+        cards: generatedCards,
+      };
+
+      if (requestId) {
+        await client.query(
+          `INSERT INTO operations (request_id, user_id, action_type, response_payload)
+           VALUES ($1, $2, 'auto_issue', $3)
+           ON CONFLICT (request_id) DO NOTHING`,
+          [requestId, user.id, JSON.stringify(payload)]
+        );
+      }
+
+      return payload;
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/cards — Paginated Collection with Filters & Grouping
+apiRouter.get('/cards', async (req: AuthenticatedRequest, res: Response) => {
+  const page = Math.max(parseInt((req.query.page as string) || '1', 10), 1);
+  const limit = Math.min(parseInt((req.query.limit as string) || '40', 10), 100);
+  const bank = req.query.bank as BankName | undefined;
+  const material = req.query.material as MaterialName | undefined;
+  const category = req.query.category as CategoryName | undefined;
+  const viewMode = (req.query.view as string) || 'templates'; // 'templates' or 'all'
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    const queryParams: any[] = [user.id];
+    let sql = 'SELECT * FROM cards WHERE user_id = $1';
+
+    if (bank) {
+      queryParams.push(bank);
+      sql += ` AND bank = $${queryParams.length}`;
+    }
+    if (material) {
+      queryParams.push(material);
+      sql += ` AND material = $${queryParams.length}`;
+    }
+    if (category) {
+      queryParams.push(category);
+      sql += ` AND category = $${queryParams.length}`;
+    }
+
+    sql += ' ORDER BY created_at DESC';
+
+    const cardsRes = await query(sql, queryParams);
+    const allMatching = cardsRes.rows;
+
+    if (viewMode === 'templates') {
+      // Group cards by template key: Bank | Material | Category
+      const templateGroups: Record<string, { templateKey: string; bank: string; material: string; category: string; count: number; sampleCard: any }> = {};
+
+      for (const card of allMatching) {
+        const key = `${card.bank}|${card.material}|${card.category}`;
+        if (!templateGroups[key]) {
+          templateGroups[key] = {
+            templateKey: key,
+            bank: card.bank,
+            material: card.material,
+            category: card.category,
+            count: 1,
+            sampleCard: card,
+          };
+        } else {
+          templateGroups[key].count++;
+        }
+      }
+
+      const groupsList = Object.values(templateGroups);
+      const totalGroups = groupsList.length;
+      const startIndex = (page - 1) * limit;
+      const paginatedGroups = groupsList.slice(startIndex, startIndex + limit);
+
+      return res.json({
+        success: true,
+        viewMode: 'templates',
+        page,
+        limit,
+        totalItems: totalGroups,
+        totalPages: Math.ceil(totalGroups / limit),
+        items: paginatedGroups,
+      });
+    }
+
+    // View mode: 'all'
+    const totalItems = allMatching.length;
+    const startIndex = (page - 1) * limit;
+    const paginatedCards = allMatching.slice(startIndex, startIndex + limit);
+
+    res.json({
+      success: true,
+      viewMode: 'all',
+      page,
+      limit,
+      totalItems,
+      totalPages: Math.ceil(totalItems / limit),
+      items: paginatedCards,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/cards/:id — Card Details
+apiRouter.get('/cards/:id', async (req: AuthenticatedRequest, res: Response) => {
+  const cardId = req.params.id;
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const cardRes = await query(
+      'SELECT * FROM cards WHERE (id = $1 OR card_uid = $1) AND user_id = $2',
+      [cardId, user.id]
+    );
+
+    if (cardRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Карта не найдена' });
+    }
+
+    res.json({ success: true, card: cardRes.rows[0] });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/favorites/:cardId — Add to favorites (max 5)
+apiRouter.post('/favorites/:cardId', async (req: AuthenticatedRequest, res: Response) => {
+  const cardId = parseInt(req.params.cardId, 10);
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    // Check count of existing favorites
+    const favCountRes = await query('SELECT COUNT(*) as count FROM user_favorites WHERE user_id = $1', [
+      user.id,
+    ]);
+    const currentCount = parseInt(favCountRes.rows[0]?.count || '0', 10);
+
+    if (currentCount >= 5) {
+      return res.status(400).json({ success: false, error: 'Максимум 5 избранных карт' });
+    }
+
+    // Verify card ownership
+    const cardCheck = await query('SELECT id FROM cards WHERE id = $1 AND user_id = $2', [
+      cardId,
+      user.id,
+    ]);
+    if (cardCheck.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Карта не найдена в вашей коллекции' });
+    }
+
+    await query(
+      'INSERT INTO user_favorites (user_id, card_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [user.id, cardId]
+    );
+
+    res.json({ success: true, message: 'Добавлено в избранное' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /api/favorites/:cardId — Remove from favorites
+apiRouter.delete('/favorites/:cardId', async (req: AuthenticatedRequest, res: Response) => {
+  const cardId = parseInt(req.params.cardId, 10);
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    await query('DELETE FROM user_favorites WHERE user_id = $1 AND card_id = $2', [user.id, cardId]);
+    res.json({ success: true, message: 'Удалено из избранного' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/tasks — Daily Tasks & Status
+apiRouter.get('/tasks', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const allTasksRes = await query('SELECT * FROM daily_tasks ORDER BY id ASC');
+    const userTasksRes = await query(
+      'SELECT * FROM user_tasks WHERE user_id = $1 AND task_date = $2',
+      [user.id, today]
+    );
+
+    const userTaskMap = new Map(userTasksRes.rows.map((ut: any) => [ut.task_id, ut]));
+
+    const tasks = allTasksRes.rows.map((task: any) => {
+      const ut = userTaskMap.get(task.id);
+      return {
+        id: task.id,
+        taskKey: task.task_key,
+        title: task.title,
+        rewardCoins: task.reward_coins,
+        targetCount: task.target_count,
+        currentProgress: ut ? ut.current_progress : 0,
+        isClaimed: ut ? ut.is_claimed : false,
+        canClaim: ut ? ut.current_progress >= task.target_count && !ut.is_claimed : false,
+      };
+    });
+
+    res.json({ success: true, tasks });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/tasks/:id/claim — Claim task reward
+apiRouter.post('/tasks/:id/claim', async (req: AuthenticatedRequest, res: Response) => {
+  const taskId = parseInt(req.params.id, 10);
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const taskRes = await query('SELECT * FROM daily_tasks WHERE id = $1', [taskId]);
+    if (taskRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Задание не найдено' });
+    }
+    const task = taskRes.rows[0];
+
+    const result = await withTransaction(async (client) => {
+      let utRes = await client.query(
+        'SELECT * FROM user_tasks WHERE user_id = $1 AND task_id = $2 AND task_date = $3',
+        [user.id, taskId, today]
+      );
+
+      // If user hasn't started or reached target, auto-complete daily login if it's login task
+      if (utRes.rowCount === 0 && task.task_key === 'daily_login') {
+        utRes = await client.query(
+          `INSERT INTO user_tasks (user_id, task_id, current_progress, is_claimed, task_date)
+           VALUES ($1, $2, 1, false, $3) RETURNING *`,
+          [user.id, taskId, today]
+        );
+      }
+
+      const ut = utRes.rows[0];
+      if (!ut || ut.current_progress < task.target_count) {
+        throw new Error('Задание еще не выполнено');
+      }
+
+      if (ut.is_claimed) {
+        throw new Error('Награда уже получена сегодня');
+      }
+
+      // Mark claimed and add coins
+      await client.query('UPDATE user_tasks SET is_claimed = true WHERE id = $1', [ut.id]);
+      await client.query('UPDATE users SET coins = coins + $1 WHERE id = $2', [
+        task.reward_coins,
+        user.id,
+      ]);
+
+      return {
+        claimedCoins: task.reward_coins,
+        taskId: task.id,
+      };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/shop — Telegram Stars Cosmetics Catalog
+apiRouter.get('/shop', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const catalogRes = await query('SELECT * FROM cosmetic_items ORDER BY price_stars ASC');
+    const ownedRes = await query('SELECT item_id FROM user_cosmetics WHERE user_id = $1', [user.id]);
+    const ownedIds = new Set(ownedRes.rows.map((r: any) => r.item_id));
+
+    const items = catalogRes.rows.map((item: any) => ({
+      ...item,
+      isOwned: ownedIds.has(item.id),
+    }));
+
+    res.json({ success: true, items });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/payments/stars/create — Create Invoice / Purchase Flow
+apiRouter.post('/payments/stars/create', async (req: AuthenticatedRequest, res: Response) => {
+  const { itemId } = req.body;
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const itemRes = await query('SELECT * FROM cosmetic_items WHERE id = $1', [itemId]);
+
+    if (itemRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Товар не найден' });
+    }
+    const item = itemRes.rows[0];
+
+    // Check if already owned
+    const owned = await query(
+      'SELECT id FROM user_cosmetics WHERE user_id = $1 AND item_id = $2',
+      [user.id, item.id]
+    );
+    if (owned.rowCount > 0) {
+      return res.status(400).json({ success: false, error: 'Этот предмет уже куплен вами' });
+    }
+
+    const chargeId = 'charge_' + crypto.randomBytes(12).toString('hex');
+
+    // Create record in star_payments
+    await query(
+      `INSERT INTO star_payments (payment_charge_id, user_id, item_id, stars_amount, status)
+       VALUES ($1, $2, $3, $4, 'pending')`,
+      [chargeId, user.id, item.id, item.price_stars]
+    );
+
+    // If running in development mode without bot token, allow instant demo unlock
+    const isDev = process.env.NODE_ENV !== 'production' || !process.env.BOT_TOKEN;
+
+    res.json({
+      success: true,
+      chargeId,
+      currency: 'XTR',
+      amount: item.price_stars,
+      title: item.name,
+      description: item.description,
+      isDevTestMode: isDev,
+      invoiceUrl: isDev ? null : `https://t.me/$bot?startattach=${chargeId}`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/payments/stars/webhook — Confirm Telegram Stars Payment
+apiRouter.post('/payments/stars/webhook', async (req: AuthenticatedRequest, res: Response) => {
+  const { chargeId, telegramPaymentChargeId, mockConfirm } = req.body;
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const paymentRes = await query('SELECT * FROM star_payments WHERE payment_charge_id = $1', [
+      chargeId,
+    ]);
+
+    if (paymentRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Платеж не найден' });
+    }
+    const payment = paymentRes.rows[0];
+
+    if (payment.status === 'completed') {
+      return res.json({ success: true, message: 'Платеж уже обработан ранее', itemAlreadyGranted: true });
+    }
+
+    // Atomic fulfillment
+    await withTransaction(async (client) => {
+      await client.query(
+        `UPDATE star_payments
+         SET status = 'completed', telegram_payment_charge_id = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [telegramPaymentChargeId || (mockConfirm ? 'MOCK_CONFIRMED' : 'STARS_RECEIPT'), payment.id]
+      );
+
+      await client.query(
+        `INSERT INTO user_cosmetics (user_id, item_id, is_equipped)
+         VALUES ($1, $2, true)
+         ON CONFLICT (user_id, item_id) DO NOTHING`,
+        [user.id, payment.item_id]
+      );
+    });
+
+    res.json({ success: true, message: 'Покупка успешно активирована!' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/albums — Albums and Progress
+apiRouter.get('/albums', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const albumsRes = await query('SELECT * FROM albums ORDER BY id ASC');
+    const cardsRes = await query('SELECT bank, material, category FROM cards WHERE user_id = $1', [
+      user.id,
+    ]);
+
+    const banksSet = new Set(cardsRes.rows.map((c: any) => c.bank));
+    const matsSet = new Set(cardsRes.rows.map((c: any) => c.material));
+    const rareCount = cardsRes.rows.filter((c: any) =>
+      ['Triple', 'Quad', 'Mirror'].includes(c.category)
+    ).length;
+
+    const albums = albumsRes.rows.map((album: any) => {
+      let progress = 0;
+      if (album.category === 'banks') progress = banksSet.size;
+      else if (album.category === 'materials') progress = matsSet.size;
+      else if (album.category === 'rarities') progress = rareCount;
+
+      const isCompleted = progress >= album.required_count;
+      return {
+        ...album,
+        progress: Math.min(progress, album.required_count),
+        isCompleted,
+      };
+    });
+
+    res.json({ success: true, albums });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/leaderboard — Friends & Global VIP Collectors
+apiRouter.get('/leaderboard', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const topUsers = await query(
+      `SELECT u.id, u.username, u.first_name, u.photo_url, u.level,
+              COUNT(c.id) as total_cards,
+              COALESCE(SUM(c.collector_score), 0) as total_score
+       FROM users u
+       LEFT JOIN cards c ON c.user_id = u.id
+       GROUP BY u.id
+       ORDER BY total_score DESC, total_cards DESC
+       LIMIT 20`
+    );
+
+    res.json({
+      success: true,
+      leaderboard: topUsers.rows.map((r: any, idx: number) => ({
+        rank: idx + 1,
+        id: r.id,
+        name: r.first_name || r.username || 'Аноним',
+        username: r.username,
+        photoUrl: r.photo_url,
+        level: r.level,
+        cardsCount: parseInt(r.total_cards, 10),
+        score: parseInt(r.total_score, 10),
+      })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});

@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: black-cards-vip-plastic
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BOT_TOKEN
+        sync: false
+      - key: WEBAPP_URL
+        fromService:
+          type: web
+          name: black-cards-vip-plastic
+          property: host
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: black-cards-db
+          property: connectionString
+
+databases:
+  - name: black-cards-db
+    plan: free
+    databaseName: black_cards_db
+    user: black_cards_user
