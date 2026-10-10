@@ -431,23 +431,14 @@ export const ClickerView: React.FC<ClickerViewProps> = ({ user, onRefreshUser })
         </div>
       )}
 
-      {/* Header Info Banner: Tier Badge & Per-tap Income */}
-      <div className="w-full flex items-center justify-between px-4 py-2.5 rounded-2xl bg-[#12151E] border border-white/5 font-mono">
-        <div className="flex items-center gap-2">
-          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${coinVisual.badgeColor}`}>
-            {coinVisual.badgeText}
-          </span>
-          <span className="text-xs text-white/70 font-semibold">{coinVisual.title}</span>
-        </div>
-
-        <div className="flex items-center gap-1.5 text-xs text-amber-400 font-bold">
-          <Flame className="w-3.5 h-3.5 text-amber-400" />
-          <span>+{clickerState?.powerCoinsPerTap || 1} ₽ / клик</span>
-        </div>
+      {/* Header Info Banner: Per-tap Income Only */}
+      <div className="flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-xl bg-white/5 border border-white/5 font-mono text-xs text-amber-400 font-bold">
+        <Flame className="w-3.5 h-3.5 text-amber-400" />
+        <span>+{clickerState?.powerCoinsPerTap || 1} ₽ / клик</span>
       </div>
 
-      {/* Central 3D Metallic Ruble Coin Area */}
-      <div className="w-full flex flex-col items-center justify-center my-auto py-2 relative">
+      {/* Central Minimalist Ruble Symbol Area (Только символ ₽, без монеты) */}
+      <div className="w-full flex flex-col items-center justify-center my-auto py-4 relative">
         <div
           ref={coinRef}
           onClick={handleCoinTap}
@@ -456,34 +447,18 @@ export const ClickerView: React.FC<ClickerViewProps> = ({ user, onRefreshUser })
           onMouseLeave={handleMouseLeave}
           style={{
             transform: `perspective(1000px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) scale(${
-              isCoinPressed ? 0.94 : 1
+              isCoinPressed ? 0.90 : 1
             })`,
             transition: isCoinPressed ? 'transform 0.05s ease-out' : 'transform 0.25s ease-out',
           }}
-          className={`relative w-56 h-56 sm:w-64 sm:h-64 rounded-full p-2 cursor-pointer transition-shadow duration-300 flex items-center justify-center bg-gradient-to-tr ${coinVisual.outerRing} border-4 select-none`}
+          className="relative w-56 h-56 sm:w-64 sm:h-64 cursor-pointer flex items-center justify-center select-none active:scale-95 transition-transform"
         >
-          {/* Subtle Outer Coin Milling Edge (Reeded Edge Effect) */}
-          <div className="absolute inset-1 rounded-full border border-dashed border-white/30 pointer-events-none" />
-
-          {/* Coin Inner Body Disc */}
-          <div
-            className={`w-full h-full rounded-full ${coinVisual.bodyGrad} flex flex-col items-center justify-center relative overflow-hidden shadow-inner border border-white/40`}
+          {/* Pure Ruble Symbol ₽ */}
+          <span
+            className="font-mono font-black text-[130px] sm:text-[150px] leading-none select-none tracking-tight text-white drop-shadow-[0_0_35px_rgba(255,255,255,0.35)]"
           >
-            {/* Realistic Light Sweep Highlight */}
-            <div className="absolute -top-1/2 -left-1/2 w-[200%] h-[200%] bg-gradient-to-b from-white/25 via-transparent to-black/30 pointer-events-none transform -rotate-45" />
-
-            {/* Clean Minimalist Inner Rim */}
-            <div className="absolute inset-2 sm:inset-3 rounded-full border border-white/25 pointer-events-none" />
-
-            {/* Pure 3D Ruble Symbol ₽ (Без лишних надписей) */}
-            <div className="relative z-10 flex items-center justify-center">
-              <span
-                className={`font-mono font-black text-8xl sm:text-9xl leading-none select-none tracking-tight ${coinVisual.symbolGrad} drop-shadow-[0_4px_16px_rgba(0,0,0,0.45)]`}
-              >
-                ₽
-              </span>
-            </div>
-          </div>
+            ₽
+          </span>
 
           {/* Floating Score Indicators (+1, +2, +5 ₽) */}
           {floatingScores.map((score) => (

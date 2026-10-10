@@ -481,111 +481,97 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
 
 
 
-      {/* Case Tiers Selector (Стандарт, Go, Plus, Элит) */}
+      {/* Case Tiers Selector — Sleek Minimalist Segmented Tabs */}
       {!isBomzhMode && (
-        <div className="w-full flex flex-col gap-1.5 mb-2.5">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-[10px] text-white/50 uppercase font-mono tracking-wider">
-              ВЫБОР КЕЙСА:
-            </span>
-            <span className={`text-[10px] font-mono font-bold ${currentTierConfig.accentColor}`}>
-              {currentTierConfig.name} • {currentTierConfig.label}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-4 gap-1.5">
-            {CASE_TIERS.map((tier) => {
-              const isSelected = selectedTier === tier.id;
-              const canAfford = coins >= tier.price;
-
-              return (
-                <button
-                  key={tier.id}
-                  onClick={() => {
-                    hapticSelection();
-                    setSelectedTier(tier.id);
-                  }}
-                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border transition-all text-center relative overflow-hidden ${
-                    isSelected
-                      ? `bg-gradient-to-b ${tier.bgGradient} ${tier.borderColor} ring-1 ring-white/20 shadow-md`
-                      : 'bg-[#12151D] border-white/5 hover:border-white/10 opacity-75 hover:opacity-100'
-                  }`}
-                >
-                  <span className={`text-xs font-bold leading-tight ${isSelected ? tier.accentColor : 'text-white/80'}`}>
-                    {tier.name}
-                  </span>
-                  <span className="text-[11px] font-mono font-black text-white mt-0.5">
-                    {tier.price.toLocaleString('ru-RU')} ₽
-                  </span>
-                  <span
-                    className={`mt-1 px-1.5 py-0.2 rounded-full text-[8px] font-mono font-bold ${
-                      isSelected
-                        ? 'bg-white/20 text-white'
-                        : 'bg-white/5 text-white/40'
-                    }`}
-                  >
-                    {tier.badge}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+        <div className="w-full flex items-center justify-between p-1 rounded-2xl bg-[#12141D] border border-white/5 my-1">
+          {CASE_TIERS.map((tier) => {
+            const isSelected = selectedTier === tier.id;
+            return (
+              <button
+                key={tier.id}
+                onClick={() => {
+                  hapticSelection();
+                  setSelectedTier(tier.id);
+                }}
+                className={`flex-1 py-1.5 px-1 rounded-xl transition-all text-center flex flex-col items-center justify-center ${
+                  isSelected
+                    ? 'bg-white/10 text-white shadow-sm'
+                    : 'text-white/40 hover:text-white/70'
+                }`}
+              >
+                <span className={`text-[11px] font-bold tracking-tight ${isSelected ? tier.accentColor : 'text-white/70'}`}>
+                  {tier.name}
+                </span>
+                <span className="text-[10px] font-mono font-semibold text-white/90">
+                  {tier.price.toLocaleString('ru-RU')} ₽
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* 6. Action Buttons: Main Mint Button & Auto-Roll */}
-      <div className="w-full flex flex-col gap-2">
-        {/* Main Button */}
+      {/* Action Buttons: Sleek, Minimalist, Card-Centric */}
+      <div className="w-full flex items-center gap-2 mt-1">
+        {/* Main Mint Button */}
         {isBomzhMode ? (
           <button
             onClick={handleFreeIssue}
             disabled={cooldown > 0 || freeRollsLeft <= 0 || isRolling || isAutoRolling}
-            className={`w-full py-4 rounded-2xl font-bold text-sm tracking-wide transition-all shadow-lg flex items-center justify-center gap-2 ${
+            className={`flex-1 py-3.5 rounded-2xl font-bold text-xs sm:text-sm tracking-wide transition-all shadow-md flex items-center justify-center gap-2 ${
               cooldown > 0 || freeRollsLeft <= 0
                 ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-white/5'
-                : 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-black active:scale-[0.98]'
+                : 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 text-black active:scale-[0.98]'
             }`}
           >
             <RotateCw className={`w-4 h-4 ${isRolling ? 'animate-spin' : ''}`} />
-            {cooldown > 0
-              ? `ОЖИДАНИЕ ТАЙМЕРА (${cooldown} С)`
-              : freeRollsLeft <= 0
-              ? 'ЛИМИТ БОМЖ ИСЧЕРПАН'
-              : 'БЕСПЛАТНЫЙ ВЫПУСК (0 ₽)'}
+            <span>
+              {cooldown > 0
+                ? `ЖДАТЬ ${cooldown} С`
+                : freeRollsLeft <= 0
+                ? 'ЛИМИТ ИСЧЕРПАН'
+                : 'БЕСПЛАТНЫЙ ВЫПУСК (0 ₽)'}
+            </span>
           </button>
         ) : (
           <button
             onClick={handleRegularIssue}
             disabled={isRolling || isAutoRolling || coins < currentTierConfig.price}
-            className={`w-full py-4 rounded-2xl font-bold text-sm tracking-wide shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 border ${
+            className={`flex-1 py-3.5 rounded-2xl font-bold text-xs sm:text-sm tracking-wide shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 border ${
               coins < currentTierConfig.price
                 ? 'bg-neutral-800 text-neutral-500 border-white/5 cursor-not-allowed'
-                : 'bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 hover:brightness-110 text-black border-emerald-400/30 shadow-[0_8px_25px_rgba(34,197,94,0.3)]'
+                : 'bg-emerald-500 hover:bg-emerald-400 text-black border-emerald-400/40 shadow-[0_4px_20px_rgba(34,197,94,0.25)]'
             }`}
           >
-            <Play className={`w-4 h-4 fill-black ${isRolling ? 'animate-spin' : ''}`} />
-            {isRolling
-              ? 'ВЫПУСК КАРТЫ...'
-              : `ВЫПУСТИТЬ КАРТУ (${currentTierConfig.price.toLocaleString('ru-RU')} ₽)`}
+            <Play className={`w-3.5 h-3.5 fill-black ${isRolling ? 'animate-spin' : ''}`} />
+            <span>
+              {isRolling
+                ? 'ВЫПУСК КАРТЫ...'
+                : `ВЫПУСТИТЬ КАРТУ (${currentTierConfig.price.toLocaleString('ru-RU')} ₽)`}
+            </span>
           </button>
         )}
 
-        {/* Auto-Roll Trigger Button */}
-        <button
-          onClick={() => {
-            if (coins < currentTierConfig.price) {
-              setErrorMessage(`Недостаточно средств для автопрокрута (нужно от ${currentTierConfig.price.toLocaleString('ru-RU')} ₽)`);
-              hapticNotification('error');
-              return;
-            }
-            setShowAutoModal(true);
-          }}
-          disabled={isRolling || isAutoRolling}
-          className="w-full py-2.5 rounded-xl bg-[#14171F] hover:bg-[#1A1F2B] active:scale-[0.98] border border-white/10 text-white/80 text-xs font-semibold tracking-wider uppercase transition-all flex items-center justify-center gap-2"
-        >
-          <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
-          {isAutoRolling ? 'АВТОПРОКРУТ В ПРОЦЕССЕ...' : `АВТОПРОКРУТ (${currentTierConfig.name} • ДО 100 КАРТ)`}
-        </button>
+        {/* Compact Auto-Roll Icon Button */}
+        {!isBomzhMode && (
+          <button
+            onClick={() => {
+              if (coins < currentTierConfig.price) {
+                setErrorMessage(
+                  `Недостаточно средств для автопрокрута (нужно от ${currentTierConfig.price.toLocaleString('ru-RU')} ₽)`
+                );
+                hapticNotification('error');
+                return;
+              }
+              setShowAutoModal(true);
+            }}
+            disabled={isRolling || isAutoRolling}
+            title="Автопрокрут"
+            className="px-3.5 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-95 border border-white/10 text-white/70 hover:text-white transition-all flex items-center justify-center shrink-0"
+          >
+            <SlidersHorizontal className="w-4 h-4 text-amber-400" />
+          </button>
+        )}
       </div>
 
       {/* Auto-Roll Setup Modal */}

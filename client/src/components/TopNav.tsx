@@ -46,11 +46,11 @@ export const TopNav: React.FC<TopNavProps> = ({
 
         {/* Center: Prominent Minimal Ruble Balance (Dead-Centered via Absolute Position) */}
         <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center justify-center text-center pointer-events-auto">
-          <div className="flex items-baseline gap-1 bg-[#131622]/95 border border-white/10 px-4 py-1 rounded-2xl shadow-inner backdrop-blur-sm">
-            <span className="font-mono font-black text-base sm:text-lg tracking-tight text-white drop-shadow-sm">
+          <div className="flex items-baseline gap-1 py-0.5">
+            <span className="font-mono font-black text-lg sm:text-xl tracking-tight text-white drop-shadow-sm">
               {coins.toLocaleString('ru-RU')}
             </span>
-            <span className="text-sm font-black text-amber-400 font-mono">₽</span>
+            <span className="text-base font-black text-amber-400 font-mono">₽</span>
           </div>
 
           {/* Compact tasks indicator */}

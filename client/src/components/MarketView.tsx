@@ -307,24 +307,6 @@ export const MarketView: React.FC<MarketViewProps> = ({
             <span>Продать</span>
           </button>
         </div>
-
-        {/* Stats Strip */}
-        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10 text-center">
-          <div className="p-2 rounded-xl bg-white/5 flex flex-col">
-            <span className="text-[10px] text-white/40">Ваш баланс</span>
-            <span className="font-bold text-amber-400 font-mono text-xs">
-              {(user?.coins || 0).toLocaleString('ru-RU')} ₽
-            </span>
-          </div>
-          <div className="p-2 rounded-xl bg-white/5 flex flex-col">
-            <span className="text-[10px] text-white/40">Комиссия биржи</span>
-            <span className="font-bold text-purple-300 font-mono text-xs">3%</span>
-          </div>
-          <div className="p-2 rounded-xl bg-white/5 flex flex-col">
-            <span className="text-[10px] text-white/40">Срок лота</span>
-            <span className="font-bold text-emerald-400 font-mono text-xs">7 дней</span>
-          </div>
-        </div>
       </div>
 
       {/* Main Tab Switcher */}
