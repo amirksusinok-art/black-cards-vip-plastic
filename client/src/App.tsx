@@ -48,18 +48,6 @@ export const App: React.FC = () => {
     initTelegramApp();
     loadUserData();
 
-    // Check Onboarding
-    const localOnboard = localStorage.getItem('carddrop_onboarding_completed');
-    if (!localOnboard) {
-      api.getSettings().then((res) => {
-        if (!res.settings?.onboardingCompleted) {
-          setShowOnboardingGuide(true);
-        }
-      }).catch(() => {
-        setShowOnboardingGuide(true);
-      });
-    }
-
     // Check Admin
     api.verifyAdmin().then((res) => {
       setIsAdmin(res.isAdmin);

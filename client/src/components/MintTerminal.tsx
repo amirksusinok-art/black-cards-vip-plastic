@@ -112,8 +112,38 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
     const mult = isHighTier ? 30 : ['Gold', 'Black Carbon'].includes(c.material) ? 15 : 2;
     const scoreBonus = Math.round((c.collector_score || 25) * mult);
     const bankBonus = c.bank === 'ВБ Банк' ? 300 : 0;
-    const base = (materialBase[c.material] || 70) + (categoryBonus[c.category] || 0) + scoreBonus + bankBonus;
     return Math.max(Math.round((base * 1.3) / 10) * 10, 80);
+  };
+
+  const getCardDemandMultiplier = (c: Card | null): string => {
+    if (!c) return '×1,15';
+    let base = 1.15;
+    if (c.material === 'Classic Plastic') base = 1.15;
+    else if (c.material === 'Matte Plastic') base = 1.25;
+    else if (c.material === 'Gold') base = 1.45;
+    else if (c.material === 'Black Carbon') base = 1.65;
+    else if (c.material === 'Titanium') base = 2.10;
+    else if (c.material === 'Holographic') base = 2.80;
+
+    if (c.bank === 'ВБ Банк') base += 0.2;
+    if (c.category !== 'Standard') base += 0.15;
+
+    return `×${base.toFixed(2).replace('.', ',')}`;
+  };
+
+  const getCardCategoryLabel = (c: Card | null): string => {
+    if (!c) return 'Обычный · оценка';
+    const catMap: Record<string, string> = {
+      'Standard': 'Обычный',
+      'Pair': 'Пара',
+      'Triple': 'Тройка',
+      'Repeater': 'Повторитель',
+      'Straight': 'Стрит',
+      'Quad': 'Каре',
+      'Mirror': 'Зеркало',
+    };
+    const prefix = catMap[c.category] || c.category || 'Обычный';
+    return `${prefix} · оценка`;
   };
 
   // Free roll cooldown timer
@@ -348,63 +378,67 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
           }}
         />
 
-        {/* Stable Fixed-Height Action Slot below card with Minimalist Typography (No Pill Buttons) */}
+        {/* Market Valuation Display (Exact design matching requested photo) */}
         {(() => {
-          const targetEstimatedPrice = getEstimatedCardPrice(pendingCard);
-          const currentTickPrice = Math.max(
-            30,
-            Math.round(
-              targetEstimatedPrice *
-                (lockedBlockCount === 0
-                  ? 0.25
-                  : lockedBlockCount === 1
-                  ? 0.5
-                  : lockedBlockCount === 2
-                  ? 0.75
-                  : lockedBlockCount === 3
-                  ? 0.9
-                  : 1)
-            )
-          );
+          const cardToShow = isRolling ? pendingCard : latestCard;
+          const targetEstimatedPrice = getEstimatedCardPrice(cardToShow);
+          const displayPrice = isRolling
+            ? Math.max(
+                50,
+                Math.round(
+                  targetEstimatedPrice *
+                    (lockedBlockCount === 0
+                      ? 0.25
+                      : lockedBlockCount === 1
+                      ? 0.5
+                      : lockedBlockCount === 2
+                      ? 0.75
+                      : lockedBlockCount === 3
+                      ? 0.9
+                      : 1)
+                )
+              )
+            : cardToShow
+            ? targetEstimatedPrice
+            : 0;
+
+          const categoryText = getCardCategoryLabel(cardToShow);
+          const demandMultiplier = getCardDemandMultiplier(cardToShow);
 
           return (
-            <div className="h-9 mt-1.5 flex items-center justify-center shrink-0">
-              {isRolling ? (
-                <div className="flex items-center gap-4 text-xs font-mono">
-                  <div className="flex items-center gap-1.5 text-emerald-400">
-                    <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-white/70">Оценка:</span>
-                    <strong className="text-emerald-300 font-bold">
-                      +{currentTickPrice.toLocaleString('ru-RU')} ₽
-                    </strong>
-                  </div>
+            <div className="flex flex-col items-center justify-center my-1.5 text-center select-none animate-fadeIn shrink-0">
+              {/* Top Subtitle: "Обычный · оценка" */}
+              <span className="text-[11px] xs:text-xs text-white/50 font-medium tracking-wide">
+                {categoryText}
+              </span>
+
+              {/* Big Bold Price: "1 604 ₽" */}
+              <div className="text-2xl xs:text-3xl font-black font-mono text-white tracking-tight leading-tight my-0.5 flex items-center justify-center gap-2">
+                <span>{displayPrice.toLocaleString('ru-RU')} ₽</span>
+                {isRolling && (
                   <button
                     onClick={handleReelComplete}
-                    className="text-white/40 hover:text-white/80 active:opacity-60 transition-colors flex items-center gap-1 text-xs underline underline-offset-2"
+                    className="text-white/40 hover:text-white/80 active:opacity-60 transition-colors flex items-center gap-1 text-[11px] underline underline-offset-2 ml-1"
                   >
                     <FastForward className="w-3 h-3" />
                     <span>Пропустить</span>
                   </button>
-                </div>
-              ) : latestCard ? (
-                <div className="flex items-center gap-3 text-xs font-mono">
-                  <span className="text-emerald-400/90 font-medium">
-                    Оценка: ~{getEstimatedCardPrice(latestCard).toLocaleString('ru-RU')} ₽
-                  </span>
-                  <span className="text-white/30">•</span>
+                )}
+                {!isRolling && latestCard && (
                   <button
                     onClick={() => onOpenCardDetails(latestCard)}
-                    className="text-white/40 hover:text-white/70 transition-colors flex items-center gap-1"
+                    className="text-white/40 hover:text-white/80 active:opacity-60 transition-colors flex items-center gap-1 text-[11px] ml-1"
                   >
-                    <Sparkles className="w-3 h-3 text-amber-400/70" />
-                    <span>Подробнее</span>
+                    <Sparkles className="w-3 h-3 text-amber-400" />
                   </button>
-                </div>
-              ) : (
-                <p className="text-xs text-white/30 font-mono">
-                  Нажмите «Выпустить карту» для начала
-                </p>
-              )}
+                )}
+              </div>
+
+              {/* Bottom Demand Multiplier Pill: "×1,15 спрос 🇷🇺" */}
+              <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#181B24] border border-white/10 text-[11px] font-mono font-medium text-white/85 shadow-sm mt-0.5">
+                <span>{demandMultiplier} спрос</span>
+                <span>🇷🇺</span>
+              </div>
             </div>
           );
         })()}

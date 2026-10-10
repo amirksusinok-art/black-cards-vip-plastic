@@ -11,8 +11,6 @@ interface ProfileViewProps {
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetails }) => {
-  const [tab, setTab] = useState<'profile' | 'leaderboard'>('profile');
-  const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
   const [favoriteCards, setFavoriteCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -20,9 +18,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetail
     const loadData = async () => {
       setLoading(true);
       try {
-        const lbRes = await api.getLeaderboard();
-        setLeaderboard(lbRes.leaderboard);
-
         // Load favorite cards
         if (user && user.favorites.length > 0) {
           const loaded: Card[] = [];
@@ -47,7 +42,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetail
 
   const handleShareProfile = () => {
     hapticImpact('light');
-    const shareText = `🔥 Мой профиль в CardDrop: Black Cards & VIP Plastic!\nУровень: ${user?.level || 1}\nКарт в коллекции: ${user?.totalCards || 0}\nПрисоединяйся к выпуску карт!`;
+    const shareText = `🔥 Мой профиль в CardDrop: Black Cards & Коллекции!\nУровень: ${user?.level || 1}\nКарт в коллекции: ${user?.totalCards || 0}\nПрисоединяйся к выпуску карт!`;
     
     if (window.Telegram?.WebApp?.openTelegramLink) {
       window.Telegram.WebApp.openTelegramLink(
@@ -62,7 +57,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetail
   };
 
   const getCollectorRank = (cardsCount: number) => {
-    if (cardsCount >= 100) return 'Diamond Black VIP';
+    if (cardsCount >= 100) return 'Diamond Black Master';
     if (cardsCount >= 50) return 'Titanium Legend';
     if (cardsCount >= 20) return 'Gold Connoisseur';
     if (cardsCount >= 5) return 'Plastic Enthusiast';
@@ -71,35 +66,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetail
 
   return (
     <div className="w-full flex flex-col p-4 max-w-md mx-auto pb-20 select-none animate-fadeIn">
-      {/* Tab Switcher */}
-      <div className="flex bg-[#141720] rounded-2xl p-1 mb-4 border border-white/10">
-        <button
-          onClick={() => {
-            hapticSelection();
-            setTab('profile');
-          }}
-          className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
-            tab === 'profile' ? 'bg-white/15 text-white shadow-sm' : 'text-white/40 hover:text-white'
-          }`}
-        >
-          Мой профиль
-        </button>
-        <button
-          onClick={() => {
-            hapticSelection();
-            setTab('leaderboard');
-          }}
-          className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-            tab === 'leaderboard' ? 'bg-white/15 text-white shadow-sm' : 'text-white/40 hover:text-white'
-          }`}
-        >
-          <Trophy className="w-3.5 h-3.5 text-amber-400" />
-          Рейтинг VIP
-        </button>
-      </div>
-
-      {tab === 'profile' ? (
-        <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4">
           {/* User Card */}
           <div className="p-5 rounded-3xl bg-gradient-to-br from-[#181B26] to-[#0E1017] border border-white/15 shadow-xl flex flex-col gap-4">
             <div className="flex items-center gap-3">
@@ -108,14 +75,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetail
                   {user?.photoUrl ? (
                     <img src={user.photoUrl} alt="avatar" className="w-full h-full object-cover" />
                   ) : (
-                    user?.username?.slice(0, 2) || 'VIP'
+                    user?.username?.slice(0, 2) || 'CD'
                   )}
                 </div>
               </div>
 
               <div className="flex flex-col">
-                <h3 className="text-base font-bold text-white flex items-center gap-1.5">
-                  {user?.firstName || user?.username || 'VIP Игрок'}
+                <h3 className="text-base font-bold text-white flex items-center gap-1.5 flex-wrap">
+                  {user?.prefix && (
+                    <span className="px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono font-bold">
+                      {user.prefix}
+                    </span>
+                  )}
+                  <span>{user?.firstName || user?.username || 'Игрок'}</span>
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                 </h3>
                 <span className="text-xs text-emerald-400 font-semibold font-mono">
@@ -182,51 +154,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onOpenCardDetail
             </div>
           </div>
         </div>
-      ) : (
-        /* Leaderboard Tab */
-        <div className="flex flex-col gap-2">
-          {leaderboard.map((u) => (
-            <div
-              key={u.id}
-              className="p-3.5 rounded-2xl bg-[#12151D] border border-white/10 flex items-center justify-between gap-3"
-            >
-              <div className="flex items-center gap-3">
-                <span
-                  className={`w-6 text-center font-mono font-bold text-sm ${
-                    u.rank === 1
-                      ? 'text-amber-400'
-                      : u.rank === 2
-                      ? 'text-slate-300'
-                      : u.rank === 3
-                      ? 'text-amber-600'
-                      : 'text-white/40'
-                  }`}
-                >
-                  #{u.rank}
-                </span>
-
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-white truncate max-w-[140px]">
-                    {u.name}
-                  </span>
-                  <span className="text-[10px] text-white/40 font-mono">
-                    {u.cardsCount} карт • Уровень {u.level}
-                  </span>
-                </div>
-              </div>
-
-              <div className="text-right">
-                <div className="text-xs font-bold font-mono text-amber-400">
-                  ★ {u.score}
-                </div>
-                <div className="text-[9px] text-white/30 uppercase font-mono">
-                  ОЧКИ
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+      </div>
   );
 };

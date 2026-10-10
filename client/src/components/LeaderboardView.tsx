@@ -298,14 +298,21 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenCardDeta
                     {entry.photoUrl ? (
                       <img src={entry.photoUrl} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      entry.username?.slice(0, 2) || 'VIP'
+                      entry.username?.slice(0, 2) || 'CD'
                     )}
                   </div>
 
                   <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-bold text-white/90 truncate">
-                      {entry.firstName || entry.username}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-bold text-white/90 truncate">
+                        {entry.firstName || entry.username}
+                      </span>
+                      {entry.prefix && (
+                        <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-mono font-bold">
+                          {entry.prefix}
+                        </span>
+                      )}
+                    </div>
                     {category === 'best_card' && entry.cardMeta ? (
                       <button
                         onClick={() => onOpenCardDetails && onOpenCardDetails(entry.cardMeta)}
@@ -314,7 +321,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenCardDeta
                         {entry.cardMeta.serialId} • {entry.cardMeta.material}
                       </button>
                     ) : (
-                      <span className="text-[10px] text-white/30 truncate">VIP Игрок</span>
+                      <span className="text-[10px] text-white/30 truncate">Коллекционер</span>
                     )}
                   </div>
                 </div>

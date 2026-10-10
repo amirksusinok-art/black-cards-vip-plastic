@@ -312,18 +312,44 @@ export const ClickerView: React.FC<ClickerViewProps> = ({ user, onRefreshUser })
     }
   };
 
+  const [claimingTaskId, setClaimingTaskId] = useState<string | null>(null);
+
+  const handleClaimTask = async (taskId: string) => {
+    try {
+      setClaimingTaskId(taskId);
+      hapticSelection();
+      const res = await api.claimClickerTask(taskId);
+      hapticNotification('success');
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.6 },
+        colors: ['#22C55E', '#FBBF24', '#FFFFFF'],
+      });
+      setSuccessMessage(`Награда за задание получена: +${res.rewardCoins.toLocaleString('ru-RU')} ₽!`);
+      setTimeout(() => setSuccessMessage(null), 2500);
+      fetchState();
+      onRefreshUser();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Ошибка получения награды за задание');
+      hapticNotification('error');
+    } finally {
+      setClaimingTaskId(null);
+    }
+  };
+
   // 5 Visual Stages of the Ruble Coin based on power level
   const getCoinVisualStage = (level: number) => {
     switch (level) {
       case 5:
-        // Platinum VIP Coin with Iridescent Sheen and Gold Inlay
+        // Platinum Coin with Iridescent Sheen and Gold Inlay
         return {
-          title: 'Платиновый VIP Рубль',
+          title: 'Платиновый Рубль',
           outerRing: 'from-slate-200 via-indigo-100 to-cyan-300 border-white/60 shadow-[0_0_50px_rgba(165,180,252,0.45),inset_0_0_20px_rgba(255,255,255,0.7)]',
           bodyGrad: 'bg-gradient-to-tr from-slate-300 via-slate-100 to-indigo-100',
           symbolGrad: 'bg-gradient-to-b from-amber-400 via-yellow-200 to-amber-500 text-transparent bg-clip-text drop-shadow-[0_2px_4px_rgba(180,83,9,0.7)]',
           rimStars: 'text-cyan-300',
-          badgeText: 'VIP ПЛАТИНА ★★★★★',
+          badgeText: 'ПЛАТИНА ★★★★★',
           badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-400/40',
         };
       case 4:
@@ -646,9 +672,28 @@ export const ClickerView: React.FC<ClickerViewProps> = ({ user, onRefreshUser })
                 </div>
               </div>
 
-              <span className="text-xs font-bold text-amber-400 font-mono">
-                +{task.rewardCoins} ₽
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-amber-400 font-mono">
+                  +{task.rewardCoins} ₽
+                </span>
+                {task.isClaimed ? (
+                  <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-[10px] text-emerald-400 font-bold">
+                    Получено
+                  </span>
+                ) : task.isCompleted ? (
+                  <button
+                    onClick={() => handleClaimTask(task.id)}
+                    disabled={claimingTaskId === task.id}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-black text-[10px] font-bold transition-all shadow-sm"
+                  >
+                    {claimingTaskId === task.id ? '...' : 'Забрать'}
+                  </button>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-lg bg-white/5 text-[10px] text-white/30 font-mono">
+                    В процессе
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>

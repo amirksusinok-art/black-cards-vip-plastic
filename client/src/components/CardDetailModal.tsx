@@ -78,6 +78,33 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
           <CardPreview card={card} interactive={true} size="normal" />
         </div>
 
+        {/* Market Valuation Display (Exact design matching requested photo) */}
+        <div className="flex flex-col items-center justify-center my-0.5 text-center select-none">
+          <span className="text-[11px] text-white/50 font-medium tracking-wide">
+            {card.category === 'Standard' ? 'Обычный' : card.category} · оценка
+          </span>
+          <div className="text-2xl font-black font-mono text-white tracking-tight leading-tight my-0.5">
+            {(card.estimated_market_price || card.collector_score * 35 || 1604).toLocaleString('ru-RU')} ₽
+          </div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#181B24] border border-white/10 text-[11px] font-mono font-medium text-white/85 shadow-sm mt-0.5">
+            <span>
+              {card.material === 'Classic Plastic'
+                ? '×1,15'
+                : card.material === 'Matte Plastic'
+                ? '×1,25'
+                : card.material === 'Gold'
+                ? '×1,45'
+                : card.material === 'Black Carbon'
+                ? '×1,65'
+                : card.material === 'Titanium'
+                ? '×2,10'
+                : '×2,80'}{' '}
+              спрос
+            </span>
+            <span>🇷🇺</span>
+          </div>
+        </div>
+
         {/* Action Buttons: Favorite & Share */}
         <div className="grid grid-cols-2 gap-2">
           <button

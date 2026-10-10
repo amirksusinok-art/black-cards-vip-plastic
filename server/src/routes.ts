@@ -48,7 +48,7 @@ async function getOrCreateUser(telegramUser: any) {
       [
         telegramUser.id,
         telegramUser.username || `user_${telegramUser.id}`,
-        telegramUser.first_name || 'VIP Player',
+        telegramUser.first_name || 'Player',
         telegramUser.last_name || '',
         telegramUser.photo_url || '',
       ]
@@ -57,10 +57,98 @@ async function getOrCreateUser(telegramUser: any) {
   return userRes.rows[0];
 }
 
+/**
+ * Helper: Automatically record daily login task progress (1/1)
+ */
+async function ensureDailyLoginTask(clientOrQuery: any, userId: number) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const tRes = await clientOrQuery.query("SELECT * FROM daily_tasks WHERE task_key = 'daily_login'");
+    if (tRes.rowCount > 0) {
+      const task = tRes.rows[0];
+      const utRes = await clientOrQuery.query(
+        'SELECT * FROM user_tasks WHERE user_id = $1 AND task_id = $2 AND task_date = $3',
+        [userId, task.id, today]
+      );
+      if (utRes.rowCount === 0) {
+        await clientOrQuery.query(
+          `INSERT INTO user_tasks (user_id, task_id, current_progress, is_claimed, task_date)
+           VALUES ($1, $2, 1, false, $3)`,
+          [userId, task.id, today]
+        );
+      } else if (utRes.rows[0].current_progress < 1) {
+        await clientOrQuery.query('UPDATE user_tasks SET current_progress = 1 WHERE id = $1', [utRes.rows[0].id]);
+      }
+    }
+  } catch (err) {
+    console.error('Error recording daily login task:', err);
+  }
+}
+
+/**
+ * Helper: Increment roll_3_cards and check daily_mission task progress
+ */
+async function recordCardIssueTaskProgress(client: any, userId: number, count: number = 1) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    // Find task 2 (roll_3_cards)
+    const t2Res = await client.query("SELECT * FROM daily_tasks WHERE task_key = 'roll_3_cards'");
+    if (t2Res.rowCount > 0) {
+      const task2 = t2Res.rows[0];
+      const ut2Res = await client.query(
+        'SELECT * FROM user_tasks WHERE user_id = $1 AND task_id = $2 AND task_date = $3',
+        [userId, task2.id, today]
+      );
+      let currentProgress = 0;
+      if (ut2Res.rowCount === 0) {
+        currentProgress = Math.min(task2.target_count, count);
+        await client.query(
+          `INSERT INTO user_tasks (user_id, task_id, current_progress, is_claimed, task_date)
+           VALUES ($1, $2, $3, false, $4)`,
+          [userId, task2.id, currentProgress, today]
+        );
+      } else {
+        const ut2 = ut2Res.rows[0];
+        currentProgress = Math.min(task2.target_count, (ut2.current_progress || 0) + count);
+        await client.query(
+          'UPDATE user_tasks SET current_progress = $1 WHERE id = $2',
+          [currentProgress, ut2.id]
+        );
+      }
+
+      // Check daily_mission (task 3): requires login and roll_3_cards
+      if (currentProgress >= task2.target_count) {
+        const t3Res = await client.query("SELECT * FROM daily_tasks WHERE task_key = 'daily_mission'");
+        if (t3Res.rowCount > 0) {
+          const task3 = t3Res.rows[0];
+          const ut3Res = await client.query(
+            'SELECT * FROM user_tasks WHERE user_id = $1 AND task_id = $2 AND task_date = $3',
+            [userId, task3.id, today]
+          );
+          if (ut3Res.rowCount === 0) {
+            await client.query(
+              `INSERT INTO user_tasks (user_id, task_id, current_progress, is_claimed, task_date)
+               VALUES ($1, $2, 1, false, $3)`,
+              [userId, task3.id, today]
+            );
+          } else {
+            await client.query('UPDATE user_tasks SET current_progress = 1 WHERE id = $1', [ut3Res.rows[0].id]);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error tracking card issue task progress:', err);
+  }
+}
+
 // GET /api/me — Profile & Balance
 apiRouter.get('/me', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = await getOrCreateUser(req.telegramUser);
+
+    // Auto-record login task progress
+    await ensureDailyLoginTask({ query }, user.id);
 
     // Get active tasks progress
     const today = new Date().toISOString().slice(0, 10);
@@ -96,6 +184,8 @@ apiRouter.get('/me', async (req: AuthenticatedRequest, res: Response) => {
     );
     const totalCards = parseInt(cardsRes.rows[0]?.count || '0', 10);
 
+    const completedTasksCount = userTasksRes.rows.filter((t: any) => t.is_claimed || t.current_progress >= 1).length;
+
     res.json({
       success: true,
       user: {
@@ -108,12 +198,13 @@ apiRouter.get('/me', async (req: AuthenticatedRequest, res: Response) => {
         coins: user.coins,
         level: user.level,
         exp: user.exp,
+        prefix: user.prefix || null,
         totalCards,
         favorites,
         freeRollsToday: freeRollData.daily_count,
         maxFreeRolls: 150,
         freeRollCooldownSeconds,
-        tasksProgress: `${userTasksRes.rows.filter((t: any) => t.is_claimed).length} из 3 заданий`,
+        tasksProgress: `${completedTasksCount} из 3 заданий`,
       },
     });
   } catch (err: any) {
@@ -203,6 +294,9 @@ apiRouter.post('/cards/issue', async (req: AuthenticatedRequest, res: Response) 
          VALUES ($1, $2, 'issue_card', $3)`,
         [requestId, user.id, JSON.stringify(payload)]
       );
+
+      // Record daily task progress
+      await recordCardIssueTaskProgress(client, user.id, 1);
 
       return payload;
     });
@@ -314,6 +408,9 @@ apiRouter.post('/cards/free-issue', async (req: AuthenticatedRequest, res: Respo
         [requestId, user.id, JSON.stringify(payload)]
       );
 
+      // Record daily task progress
+      await recordCardIssueTaskProgress(client, user.id, 1);
+
       return payload;
     });
 
@@ -414,6 +511,11 @@ apiRouter.post('/cards/auto-issue', async (req: AuthenticatedRequest, res: Respo
            ON CONFLICT (request_id) DO NOTHING`,
           [requestId, user.id, JSON.stringify(payload)]
         );
+      }
+
+      // Record daily task progress
+      if (completedSpins > 0) {
+        await recordCardIssueTaskProgress(client, user.id, completedSpins);
       }
 
       return payload;
@@ -590,6 +692,9 @@ apiRouter.get('/tasks', async (req: AuthenticatedRequest, res: Response) => {
     const user = await getOrCreateUser(req.telegramUser);
     const today = new Date().toISOString().slice(0, 10);
 
+    // Auto-record login task
+    await ensureDailyLoginTask({ query }, user.id);
+
     const allTasksRes = await query('SELECT * FROM daily_tasks ORDER BY id ASC');
     const userTasksRes = await query(
       'SELECT * FROM user_tasks WHERE user_id = $1 AND task_date = $2',
@@ -600,15 +705,18 @@ apiRouter.get('/tasks', async (req: AuthenticatedRequest, res: Response) => {
 
     const tasks = allTasksRes.rows.map((task: any) => {
       const ut = userTaskMap.get(task.id);
+      const isLogin = task.task_key === 'daily_login';
+      const progress = ut ? ut.current_progress : (isLogin ? 1 : 0);
+      const isClaimed = ut ? ut.is_claimed : false;
       return {
         id: task.id,
         taskKey: task.task_key,
         title: task.title,
         rewardCoins: task.reward_coins,
         targetCount: task.target_count,
-        currentProgress: ut ? ut.current_progress : 0,
-        isClaimed: ut ? ut.is_claimed : false,
-        canClaim: ut ? ut.current_progress >= task.target_count && !ut.is_claimed : false,
+        currentProgress: progress,
+        isClaimed,
+        canClaim: progress >= task.target_count && !isClaimed,
       };
     });
 
@@ -645,6 +753,23 @@ apiRouter.post('/tasks/:id/claim', async (req: AuthenticatedRequest, res: Respon
            VALUES ($1, $2, 1, false, $3) RETURNING *`,
           [user.id, taskId, today]
         );
+      }
+
+      // If task is daily_mission, check if both login & roll_3_cards are completed
+      if (task.task_key === 'daily_mission' && utRes.rowCount === 0) {
+        const otherRes = await client.query(
+          'SELECT * FROM user_tasks WHERE user_id = $1 AND task_date = $2',
+          [user.id, today]
+        );
+        const loginDone = otherRes.rows.some((t: any) => t.task_id === 1 && (t.is_claimed || t.current_progress >= 1));
+        const rollsDone = otherRes.rows.some((t: any) => t.task_id === 2 && (t.is_claimed || t.current_progress >= 3));
+        if (loginDone && rollsDone) {
+          utRes = await client.query(
+            `INSERT INTO user_tasks (user_id, task_id, current_progress, is_claimed, task_date)
+             VALUES ($1, $2, 1, false, $3) RETURNING *`,
+            [user.id, taskId, today]
+          );
+        }
       }
 
       const ut = utRes.rows[0];
@@ -1344,16 +1469,44 @@ apiRouter.get('/clicker/state', async (req: AuthenticatedRequest, res: Response)
       totalTaps: clicker.total_clicks || 0,
       canClaimDailyHelp,
       dailyHelpCoins: DAILY_HELP_AMOUNT,
-      tasks: CLICKER_TASKS.map((t) => ({
-        id: t.id,
-        title: t.title,
-        desc: t.description,
-        rewardCoins: t.reward,
-        targetCount: t.targetCount,
-        currentProgress: Math.min(t.targetCount, clicker.total_clicks || 0),
-        isCompleted: (clicker.total_clicks || 0) >= t.targetCount,
-        isClaimed: false,
-      })),
+      tasks: (() => {
+        const claimedList: string[] = Array.isArray(clicker.claimed_tasks)
+          ? clicker.claimed_tasks
+          : typeof clicker.claimed_tasks === 'string'
+          ? JSON.parse(clicker.claimed_tasks)
+          : [];
+
+        return CLICKER_TASKS.map((t) => {
+          let currentProgress = 0;
+          let isCompleted = false;
+
+          if (t.id === 'daily_enter') {
+            currentProgress = 1;
+            isCompleted = true;
+          } else if (t.id === 'buy_upgrade') {
+            const hasUpgraded = powerLevel > 1 || rechargeLevel > 1;
+            currentProgress = hasUpgraded ? 1 : 0;
+            isCompleted = hasUpgraded;
+          } else if (t.type === 'clicks') {
+            const total = clicker.total_clicks || 0;
+            currentProgress = Math.min(t.targetCount, total);
+            isCompleted = total >= t.targetCount;
+          }
+
+          const isClaimed = claimedList.includes(t.id);
+          return {
+            id: t.id,
+            title: t.title,
+            desc: t.description,
+            rewardCoins: t.reward,
+            targetCount: t.targetCount,
+            currentProgress,
+            isCompleted,
+            isClaimed,
+            canClaim: isCompleted && !isClaimed,
+          };
+        });
+      })(),
     };
 
     res.json({
@@ -1626,6 +1779,76 @@ apiRouter.post('/clicker/claim-daily-help', async (req: AuthenticatedRequest, re
         coinsAdded: DAILY_HELP_AMOUNT,
         totalCoins: updateRes.rows[0].coins,
         newCoins: updateRes.rows[0].coins,
+      };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/clicker/claim-task — Claim reward for completed clicker task
+apiRouter.post('/clicker/claim-task', async (req: AuthenticatedRequest, res: Response) => {
+  const { taskId } = req.body;
+  if (!taskId) {
+    return res.status(400).json({ success: false, error: 'Missing taskId' });
+  }
+
+  const taskDef = CLICKER_TASKS.find((t) => t.id === taskId);
+  if (!taskDef) {
+    return res.status(404).json({ success: false, error: 'Задание не найдено' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    const result = await withTransaction(async (client) => {
+      let cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      if (cRes.rowCount === 0) {
+        throw new Error('Данные кликера не найдены');
+      }
+      const clicker = cRes.rows[0];
+      const claimedList: string[] = Array.isArray(clicker.claimed_tasks)
+        ? clicker.claimed_tasks
+        : typeof clicker.claimed_tasks === 'string'
+        ? JSON.parse(clicker.claimed_tasks)
+        : [];
+
+      if (claimedList.includes(taskId)) {
+        throw new Error('Награда за это задание уже получена');
+      }
+
+      let isCompleted = false;
+      if (taskDef.id === 'daily_enter') {
+        isCompleted = true;
+      } else if (taskDef.id === 'buy_upgrade') {
+        isCompleted = clicker.power_level > 1 || clicker.recharge_level > 1;
+      } else if (taskDef.type === 'clicks') {
+        isCompleted = (clicker.total_clicks || 0) >= taskDef.targetCount;
+      }
+
+      if (!isCompleted) {
+        throw new Error('Задание еще не выполнено');
+      }
+
+      // Add task to claimed list
+      const updatedClaimed = [...claimedList, taskId];
+      await client.query(
+        'UPDATE user_clicker SET claimed_tasks = $1 WHERE user_id = $2',
+        [JSON.stringify(updatedClaimed), user.id]
+      );
+
+      // Award coins
+      const uRes = await client.query(
+        'UPDATE users SET coins = coins + $1 WHERE id = $2 RETURNING coins',
+        [taskDef.reward, user.id]
+      );
+
+      return {
+        coins: uRes.rows[0].coins,
+        rewardCoins: taskDef.reward,
+        claimedTaskId: taskId,
       };
     });
 
@@ -2025,6 +2248,7 @@ apiRouter.get('/admin/users', adminMiddleware, async (req: AuthenticatedRequest,
             firstName: u.first_name,
             coins: u.coins,
             level: u.level,
+            prefix: u.prefix || null,
             cardsCount,
             totalClicks: clicker?.total_clicks || 0,
             createdAt: u.created_at,
@@ -2032,7 +2256,7 @@ apiRouter.get('/admin/users', adminMiddleware, async (req: AuthenticatedRequest,
         });
     } else {
       const usersRes = await query(
-        `SELECT u.id, u.telegram_id, u.username, u.first_name, u.coins, u.level, u.created_at,
+        `SELECT u.id, u.telegram_id, u.username, u.first_name, u.coins, u.level, u.prefix, u.created_at,
                 COUNT(c.id) AS cards_count,
                 COALESCE(cl.total_clicks, 0) AS total_clicks
          FROM users u
@@ -2051,6 +2275,7 @@ apiRouter.get('/admin/users', adminMiddleware, async (req: AuthenticatedRequest,
         firstName: row.first_name,
         coins: row.coins,
         level: row.level,
+        prefix: row.prefix || null,
         cardsCount: Number(row.cards_count),
         totalClicks: Number(row.total_clicks),
         createdAt: row.created_at,
@@ -2111,6 +2336,59 @@ apiRouter.post('/admin/adjust-balance', adminMiddleware, async (req: Authenticat
       );
 
       return { prevCoins, newCoins: updateRes.rows[0].coins };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/admin/set-prefix — Set or clear user badge prefix with audit log
+apiRouter.post('/admin/set-prefix', adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { targetUserId, prefix, reason = 'Назначение префикса' } = req.body;
+    if (!targetUserId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Требуется указать ID игрока',
+      });
+    }
+
+    const cleanPrefix = prefix ? String(prefix).trim().slice(0, 32) : null;
+    const adminTgId = req.telegramUser?.id || 0;
+
+    const result = await withTransaction(async (client) => {
+      const userRes = await client.query('SELECT * FROM users WHERE id = $1', [targetUserId]);
+      if (userRes.rowCount === 0) {
+        throw new Error('Игрок с указанным ID не найден');
+      }
+
+      const prevPrefix = userRes.rows[0].prefix || null;
+
+      await client.query(
+        'UPDATE users SET prefix = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [cleanPrefix, targetUserId]
+      );
+
+      // Record in Admin Audit Log
+      await client.query(
+        `INSERT INTO admin_audit_log (admin_telegram_id, action, target_user_id, reason, details)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          adminTgId,
+          'set_prefix',
+          targetUserId,
+          reason,
+          JSON.stringify({ prevPrefix, newPrefix: cleanPrefix }),
+        ]
+      );
+
+      return {
+        targetUserId,
+        prevPrefix,
+        prefix: cleanPrefix,
+      };
     });
 
     res.json({ success: true, ...result });

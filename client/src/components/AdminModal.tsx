@@ -40,6 +40,11 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onRefre
   const [adjustReason, setAdjustReason] = useState<string>('');
   const [adjusting, setAdjusting] = useState(false);
 
+  // User prefix modal state
+  const [prefixUser, setPrefixUser] = useState<AdminUserItem | null>(null);
+  const [userPrefixInput, setUserPrefixInput] = useState<string>('');
+  const [savingPrefix, setSavingPrefix] = useState(false);
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -104,6 +109,36 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onRefre
       hapticNotification('error');
     } finally {
       setAdjusting(false);
+    }
+  };
+
+  const handleSavePrefix = async (prefixToSet?: string | null) => {
+    if (!prefixUser) return;
+    const finalPrefix = prefixToSet !== undefined ? prefixToSet : userPrefixInput.trim();
+    try {
+      setSavingPrefix(true);
+      hapticSelection();
+      await api.adminSetPrefix(
+        prefixUser.id,
+        finalPrefix || null,
+        `Установка префикса: ${finalPrefix ? `[${finalPrefix}]` : 'сброшен'}`
+      );
+      hapticNotification('success');
+      setActionMessage({
+        type: 'success',
+        text: `Префикс игрока ${prefixUser.firstName || prefixUser.username} обновлен: ${
+          finalPrefix ? `[${finalPrefix}]` : 'сброшен'
+        }`,
+      });
+      setPrefixUser(null);
+      setUserPrefixInput('');
+      loadData();
+      if (onRefreshGlobalUser) onRefreshGlobalUser();
+    } catch (err: any) {
+      setActionMessage({ type: 'error', text: err.message || 'Ошибка обновления префикса' });
+      hapticNotification('error');
+    } finally {
+      setSavingPrefix(false);
     }
   };
 
@@ -225,21 +260,38 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onRefre
                   className="flex items-center justify-between p-2.5 rounded-xl bg-[#141724] border border-white/5 text-xs"
                 >
                   <div className="flex flex-col min-w-0 pr-2">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-bold text-white truncate">{u.firstName || u.username}</span>
+                      {u.prefix && (
+                        <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-bold">
+                          {u.prefix}
+                        </span>
+                      )}
                       <span className="text-[10px] text-white/40">#{u.id}</span>
                     </div>
                     <span className="text-[10px] text-white/40 truncate">TG ID: {u.telegramId} • Карт: {u.cardsCount}</span>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="font-bold text-amber-300">{u.coins.toLocaleString('ru-RU')} ₽</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="font-bold text-amber-300 mr-1">{u.coins.toLocaleString('ru-RU')} ₽</span>
+                    <button
+                      onClick={() => {
+                        hapticSelection();
+                        setPrefixUser(u);
+                        setUserPrefixInput(u.prefix || '');
+                        setSelectedUser(null);
+                      }}
+                      className="px-2 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 text-[10px] font-bold"
+                    >
+                      Префикс
+                    </button>
                     <button
                       onClick={() => {
                         hapticSelection();
                         setSelectedUser(u);
                         setAdjustAmount('');
                         setAdjustReason('');
+                        setPrefixUser(null);
                       }}
                       className="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-bold"
                     >
@@ -249,6 +301,74 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onRefre
                 </div>
               ))}
             </div>
+
+            {/* Prefix Modal Dialog */}
+            {prefixUser && (
+              <div className="p-3.5 rounded-2xl bg-[#1A1D2C] border border-blue-500/50 flex flex-col gap-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white">
+                    Префикс игрока: {prefixUser.firstName || prefixUser.username} (#{prefixUser.id})
+                  </span>
+                  <button onClick={() => setPrefixUser(null)} className="text-white/40 hover:text-white">✕</button>
+                </div>
+                <div className="text-[11px] text-white/50">
+                  Текущий: {prefixUser.prefix ? <span className="text-amber-300 font-bold">[{prefixUser.prefix}]</span> : <span className="text-white/40">нет префикса</span>}
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex flex-wrap gap-1.5">
+                  {['VIP', 'WHALE', 'DEV', 'ROOT', 'TOP', 'TESTER'].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setUserPrefixInput(preset)}
+                      className={`px-2 py-1 rounded-lg border text-[10px] font-bold transition-colors ${
+                        userPrefixInput === preset
+                          ? 'bg-blue-500 text-black border-blue-400'
+                          : 'bg-white/5 hover:bg-white/10 text-white/80 border-white/10'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="Введите префикс (например: VIP, DEV, СКУПЩИК)..."
+                  value={userPrefixInput}
+                  onChange={(e) => setUserPrefixInput(e.target.value)}
+                  maxLength={32}
+                  className="w-full bg-[#10121A] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder-white/30"
+                />
+
+                <div className="flex justify-between items-center mt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSavePrefix(null)}
+                    disabled={savingPrefix || !prefixUser.prefix}
+                    className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 text-xs disabled:opacity-40"
+                  >
+                    Очистить
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setPrefixUser(null)}
+                      className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-white/80"
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      onClick={() => handleSavePrefix()}
+                      disabled={savingPrefix}
+                      className="px-4 py-1.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-black font-bold text-xs transition-colors disabled:opacity-50"
+                    >
+                      {savingPrefix ? 'Сохранение...' : 'Сохранить'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Adjust Modal Dialog */}
             {selectedUser && (

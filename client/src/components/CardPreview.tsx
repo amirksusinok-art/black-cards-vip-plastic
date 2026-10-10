@@ -64,8 +64,25 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
   const [bankReelActive, setBankReelActive] = useState(false);
   const [lockedBlocks, setLockedBlocks] = useState<number>(0);
 
-  // Parse digits into 4 blocks of 4 digits
-  const rawDigits = targetCardNumber.replace(/\s+/g, '').split(''); // 16 digits
+  // Dynamic random ticker for spinning slots (falls continuously from top to bottom)
+  const [tickerDigits, setTickerDigits] = useState<number[]>(() =>
+    Array.from({ length: 16 }, () => Math.floor(Math.random() * 10))
+  );
+
+  useEffect(() => {
+    if (!isRolling) return;
+    const interval = setInterval(() => {
+      setTickerDigits(Array.from({ length: 16 }, () => Math.floor(Math.random() * 10)));
+    }, 45);
+    return () => clearInterval(interval);
+  }, [isRolling]);
+
+  // Sanitize card number to guarantee exactly 16 clean numeric characters
+  const cleanDigits = (activeCard?.card_number || targetCardNumber || '2202 8841 9023 5510')
+    .replace(/\D/g, '')
+    .padEnd(16, '0')
+    .slice(0, 16);
+  const rawDigits = cleanDigits.split(''); // Exactly 16 digits
 
   // Target card identity key for dependency stability
   const targetCardKey = targetCard ? targetCard.card_uid || targetCard.id : null;
@@ -428,12 +445,12 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
 
       {/* Bottom Area: 16-Digit Number (With Slot Reel) & Meta */}
       <div className="relative z-10 flex flex-col gap-1.5 sm:gap-2">
-        {/* Card Number Container - Always Centered (Both when Rolling and when Static) */}
+        {/* Card Number Container - Fluid & Perfectly Fitted across all screen sizes */}
         {isRolling ? (
-          /* On-Card 16-Digit Slot Reel with 3D Depth Cylinders (Centered) */
+          /* On-Card 16-Digit Slot Reel (Fluid, Centered, Percentage-Aligned) */
           <div
-            className={`w-full flex items-center justify-center font-mono font-bold tracking-[0.12em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] overflow-hidden ${
-              isCompact ? 'h-5 gap-1 text-xs' : 'h-7 gap-2 sm:gap-3 text-lg sm:text-xl'
+            className={`w-full flex items-center justify-center font-mono font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] ${
+              isCompact ? 'h-5 gap-1.5 text-xs' : 'h-6 sm:h-7 gap-2 xs:gap-2.5 sm:gap-3 text-xs xs:text-sm sm:text-base'
             }`}
           >
             {[0, 1, 2, 3].map((blockIdx) => {
@@ -445,57 +462,46 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
               return (
                 <div
                   key={blockIdx}
-                  className={`flex gap-[1px] sm:gap-[2px] px-1 py-0.5 rounded-lg transition-all duration-300 ${
+                  className={`flex items-center gap-[1px] sm:gap-[2px] px-1 py-0.5 rounded-lg transition-all duration-300 ${
                     isLocked
-                      ? 'bg-amber-400/10 border border-amber-400/40 shadow-[0_0_8px_rgba(251,191,36,0.3)]'
-                      : 'bg-black/30 border border-white/5'
+                      ? 'bg-amber-400/20 border border-amber-400/50 shadow-[0_0_8px_rgba(251,191,36,0.3)] text-amber-200'
+                      : 'bg-black/40 border border-white/10 text-white'
                   }`}
                 >
                   {[0, 1, 2, 3].map((dIdx) => {
                     const globalIdx = blockIdx * 4 + dIdx;
                     const finalDigit = parseInt(rawDigits[globalIdx] || '0', 10);
-                    const digitStrip = [
-                      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-                      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-                      finalDigit,
-                    ];
-                    const targetIdx = digitStrip.length - 1;
-                    const colHeight = isCompact ? 20 : 28;
+                    const safeDigit = isNaN(finalDigit) ? 0 : finalDigit;
+
+                    if (isLocked) {
+                      return (
+                        <div
+                          key={`locked-${globalIdx}-${safeDigit}`}
+                          className={`${
+                            isCompact
+                              ? 'w-[8px] h-4.5 text-xs'
+                              : 'w-[10px] xs:w-[12px] sm:w-[14px] h-5 sm:h-6 text-xs xs:text-sm sm:text-base'
+                          } flex items-center justify-center font-mono font-black text-amber-200 text-center leading-none animate-lockPop`}
+                        >
+                          {safeDigit}
+                        </div>
+                      );
+                    }
 
                     return (
                       <div
-                        key={dIdx}
+                        key={`roll-${globalIdx}`}
                         className={`${
-                          isCompact ? 'w-[9px] h-5' : 'w-[12px] sm:w-[15px] h-7'
-                        } overflow-hidden relative flex flex-col items-center justify-center`}
-                        style={{
-                          WebkitMaskImage:
-                            'linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)',
-                          maskImage:
-                            'linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)',
-                        }}
+                          isCompact
+                            ? 'w-[8px] h-4.5 text-xs'
+                            : 'w-[10px] xs:w-[12px] sm:w-[14px] h-5 sm:h-6 text-xs xs:text-sm sm:text-base'
+                        } overflow-hidden relative flex items-center justify-center`}
                       >
                         <div
-                          className="flex flex-col items-center"
-                          style={{
-                            transform: reelActive
-                              ? `translateY(-${targetIdx * colHeight}px)`
-                              : 'translateY(0px)',
-                            transition: reelActive
-                              ? `transform ${blockDuration}ms cubic-bezier(0.12, 0.85, 0.3, 1) ${blockDelay}ms`
-                              : 'none',
-                          }}
+                          key={`tick-${globalIdx}-${tickerDigits[globalIdx]}`}
+                          className="animate-digitFall flex items-center justify-center font-mono font-bold text-white text-center leading-none"
                         >
-                          {digitStrip.map((num, i) => (
-                            <div
-                              key={i}
-                              className={`flex items-center justify-center font-mono font-bold text-white text-center leading-none ${
-                                isCompact ? 'h-5 text-xs' : 'h-7 text-lg sm:text-xl'
-                              }`}
-                            >
-                              {num}
-                            </div>
-                          ))}
+                          {tickerDigits[globalIdx]}
                         </div>
                       </div>
                     );
@@ -505,25 +511,26 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
             })}
           </div>
         ) : (
-          /* Static Card Number - Perfectly Centered in 4 Identical Blocks */
+          /* Static Card Number - Clean Luxury Embossed Bank Card Look */
           <div
-            className={`w-full flex items-center justify-center font-mono font-bold tracking-[0.12em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] overflow-hidden ${
-              isCompact ? 'h-5 gap-1 text-xs' : 'h-7 gap-2 sm:gap-3 text-lg sm:text-xl'
+            className={`w-full flex items-center justify-center font-mono font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] ${
+              isCompact ? 'h-5 gap-1.5 text-xs' : 'h-6 sm:h-7 gap-2 xs:gap-2.5 sm:gap-3 text-xs xs:text-sm sm:text-base'
             }`}
           >
             {[0, 1, 2, 3].map((blockIdx) => {
-              const cleanDigits = targetCardNumber.replace(/\s+/g, '');
               const blockStr = cleanDigits.slice(blockIdx * 4, blockIdx * 4 + 4) || '0000';
               return (
                 <div
                   key={blockIdx}
-                  className="flex gap-[1px] sm:gap-[2px] px-1 py-0.5 rounded-lg bg-black/25 border border-white/5"
+                  className="flex items-center gap-[1px] sm:gap-[2px] px-1 py-0.5 rounded-lg bg-black/30 border border-white/10"
                 >
                   {blockStr.split('').map((d, dIdx) => (
                     <div
                       key={dIdx}
                       className={`${
-                        isCompact ? 'w-[9px] h-5 text-xs' : 'w-[12px] sm:w-[15px] h-7 text-lg sm:text-xl'
+                        isCompact
+                          ? 'w-[8px] h-4.5 text-xs'
+                          : 'w-[10px] xs:w-[12px] sm:w-[14px] h-5 sm:h-6 text-xs xs:text-sm sm:text-base'
                       } flex items-center justify-center font-mono font-bold text-white text-center leading-none`}
                     >
                       {d}

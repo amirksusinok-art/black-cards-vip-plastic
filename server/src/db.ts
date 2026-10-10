@@ -251,6 +251,7 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
         coins: customCoins,
         level: 1,
         exp: 0,
+        prefix: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -261,6 +262,19 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
       saveMockData();
     }
     return { rows: [user], rowCount: 1 };
+  }
+
+  if (sql.includes('UPDATE users SET prefix =')) {
+    const newPrefix = params[0];
+    const userId = params[params.length - 1];
+    const user = mockDB.users.find(u => Number(u.id) === Number(userId));
+    if (user) {
+      user.prefix = newPrefix ? String(newPrefix).trim() : null;
+      user.updated_at = new Date().toISOString();
+      saveMockData();
+      return { rows: [user], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
   }
 
   if (sql.includes('UPDATE users SET coins = coins -')) {
@@ -423,8 +437,98 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
 
   if (sql.includes('FROM user_tasks WHERE user_id =')) {
     const userId = params[0];
-    const userTasks = mockDB.user_tasks.filter(t => t.user_id === Number(userId));
+    let userTasks = mockDB.user_tasks.filter(t => t.user_id === Number(userId));
+    if (sql.includes('task_id =') && params.length >= 2) {
+      const taskId = params[1];
+      userTasks = userTasks.filter(t => Number(t.task_id) === Number(taskId));
+    }
+    if (sql.includes('task_date =')) {
+      const taskDate = params[params.length - 1];
+      userTasks = userTasks.filter(t => t.task_date === taskDate);
+    }
     return { rows: userTasks, rowCount: userTasks.length };
+  }
+
+  if (sql.includes('INSERT INTO user_tasks')) {
+    // Support mix of literals and params, e.g. VALUES ($1, 1, 1, true, $2) or VALUES ($1, $2, $3, false, $4)
+    const valuesMatch = sql.match(/VALUES\s*\(([^)]+)\)/i);
+    let userId = params[0];
+    let taskId = 1;
+    let progress = 0;
+    let isClaimed = false;
+    let taskDate = new Date().toISOString().slice(0, 10);
+
+    if (valuesMatch) {
+      const parts = valuesMatch[1].split(',').map(s => s.trim());
+      const resolvePart = (part: string) => {
+        if (part.startsWith('$')) {
+          const idx = parseInt(part.slice(1), 10) - 1;
+          return params[idx];
+        }
+        if (part === 'true') return true;
+        if (part === 'false') return false;
+        if (!isNaN(Number(part))) return Number(part);
+        return part.replace(/^['"]|['"]$/g, '');
+      };
+
+      if (parts.length >= 5) {
+        userId = Number(resolvePart(parts[0]));
+        taskId = Number(resolvePart(parts[1]));
+        progress = Number(resolvePart(parts[2]) || 0);
+        isClaimed = Boolean(resolvePart(parts[3]));
+        taskDate = String(resolvePart(parts[4]) || taskDate);
+      }
+    } else {
+      userId = Number(params[0]);
+      taskId = Number(params[1] || 1);
+      progress = Number(params[2] || 0);
+      isClaimed = Boolean(params[3]);
+      taskDate = params[4] || taskDate;
+    }
+
+    const newTask = {
+      id: mockDB.user_tasks.length + 1,
+      user_id: userId,
+      task_id: taskId,
+      current_progress: progress,
+      is_claimed: isClaimed,
+      task_date: taskDate,
+      created_at: new Date().toISOString()
+    };
+    mockDB.user_tasks.push(newTask);
+    saveMockData();
+    return { rows: [newTask], rowCount: 1 };
+  }
+
+  if (sql.includes('UPDATE user_tasks SET is_claimed = true')) {
+    const taskId = params[0];
+    const ut = mockDB.user_tasks.find(t => Number(t.id) === Number(taskId));
+    if (ut) {
+      ut.is_claimed = true;
+      saveMockData();
+      return { rows: [ut], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  if (sql.includes('UPDATE user_tasks SET current_progress =')) {
+    let progress = 1;
+    let recordId: any;
+    if (params.length >= 2) {
+      progress = Number(params[0]);
+      recordId = params[1];
+    } else {
+      const match = sql.match(/current_progress\s*=\s*(\d+)/i);
+      if (match) progress = Number(match[1]);
+      recordId = params[0];
+    }
+    const ut = mockDB.user_tasks.find(t => Number(t.id) === Number(recordId));
+    if (ut) {
+      ut.current_progress = progress;
+      saveMockData();
+      return { rows: [ut], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
   }
 
   // 6. Shop & Cosmetics
@@ -569,6 +673,7 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
         last_energy_updated_at: new Date().toISOString(),
         last_daily_help_at: null,
         total_clicks: 0,
+        claimed_tasks: [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -591,6 +696,7 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
         last_energy_updated_at: new Date().toISOString(),
         last_daily_help_at: null,
         total_clicks: 0,
+        claimed_tasks: [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -608,6 +714,8 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
         c.power_level = Number(params[0]);
       } else if (sql.includes('recharge_level = $1')) {
         c.recharge_level = Number(params[0]);
+      } else if (sql.includes('claimed_tasks = $1')) {
+        c.claimed_tasks = Array.isArray(params[0]) ? params[0] : (typeof params[0] === 'string' ? JSON.parse(params[0]) : []);
       } else if (sql.includes('current_energy = $1')) {
         c.current_energy = Number(params[0]);
         if (params.length >= 3 && sql.includes('last_energy_updated_at = $2')) {

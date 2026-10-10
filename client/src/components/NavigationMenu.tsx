@@ -141,7 +141,7 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({
       label: 'Магазин Stars',
       desc: 'Пополнение баланса за Telegram Stars',
       icon: <ShoppingBag className="w-4 h-4 text-amber-400" />,
-      badge: 'VIP',
+      badge: 'Stars',
     },
     {
       id: 'profile',

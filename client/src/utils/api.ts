@@ -167,9 +167,6 @@ export const api = {
       body: JSON.stringify({ chargeId, mockConfirm }),
     }),
 
-  getLeaderboard: () =>
-    request<{ success: boolean; leaderboard: LeaderboardUser[] }>('/leaderboard'),
-
   // Avita Merchant Endpoints
   getAvitaStatus: () =>
     request<{ success: boolean; isBlocked: boolean; blockedUntil: string | null; secondsRemaining: number }>(
@@ -303,6 +300,27 @@ export const api = {
     }>('/admin/adjust-balance', {
       method: 'POST',
       body: JSON.stringify({ targetUserId, amount, reason }),
+    }),
+
+  adminSetPrefix: (targetUserId: number, prefix: string | null, reason?: string) =>
+    request<{
+      success: boolean;
+      targetUserId: number;
+      prefix: string | null;
+    }>('/admin/set-prefix', {
+      method: 'POST',
+      body: JSON.stringify({ targetUserId, prefix, reason }),
+    }),
+
+  claimClickerTask: (taskId: string) =>
+    request<{
+      success: boolean;
+      coins: number;
+      rewardCoins: number;
+      claimedTaskId: string;
+    }>('/clicker/claim-task', {
+      method: 'POST',
+      body: JSON.stringify({ taskId }),
     }),
 
   getAdminAuditLogs: () =>

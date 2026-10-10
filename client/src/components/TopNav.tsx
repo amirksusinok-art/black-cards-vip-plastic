@@ -67,7 +67,13 @@ export const TopNav: React.FC<TopNavProps> = ({
         </div>
 
         {/* Right: Settings [⚙️] & Compact Profile Avatar */}
-        <div className="flex items-center gap-2 z-10 shrink-0">
+        {/* Right: Prefix Badge, Settings [⚙️] & Compact Profile Avatar */}
+        <div className="flex items-center gap-1.5 sm:gap-2 z-10 shrink-0">
+          {user?.prefix && (
+            <span className="px-1.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-mono font-bold tracking-wider">
+              {user.prefix}
+            </span>
+          )}
           <button
             onClick={() => {
               hapticSelection();
@@ -91,7 +97,7 @@ export const TopNav: React.FC<TopNavProps> = ({
               {user?.photoUrl ? (
                 <img src={user.photoUrl} alt="avatar" className="w-full h-full object-cover" />
               ) : (
-                user?.username?.slice(0, 2) || 'VIP'
+                user?.username?.slice(0, 2) || 'CD'
               )}
             </div>
             {/* Level indicator pill */}

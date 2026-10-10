@@ -155,4 +155,87 @@ describe('Leaderboard, Settings, and Admin Integration Tests', () => {
     expect(auditData.logs.length).toBeGreaterThanOrEqual(1);
     expect(auditData.logs[0].action).toBe('adjust_balance');
   });
+
+  it('admin can set, update, and clear user prefix', async () => {
+    const initialMe = await (await fetch(`${baseUrl}/me`)).json();
+    const targetUserId = initialMe.user.id;
+
+    // 1. Set prefix to WHALE
+    const setRes = await fetch(`${baseUrl}/admin/set-prefix`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-password': encodeURIComponent(ADMIN_SECRET_PASSWORD),
+      },
+      body: JSON.stringify({
+        targetUserId,
+        prefix: 'WHALE',
+      }),
+    });
+    const setData = await setRes.json();
+    expect(setRes.status).toBe(200);
+    expect(setData.success).toBe(true);
+    expect(setData.prefix).toBe('WHALE');
+
+    // 2. Fetch /api/me and verify prefix
+    const meRes = await fetch(`${baseUrl}/me`);
+    const meData = await meRes.json();
+    expect(meRes.status).toBe(200);
+    expect(meData.user.prefix).toBe('WHALE');
+
+    // 3. Clear prefix
+    const clearRes = await fetch(`${baseUrl}/admin/set-prefix`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-password': encodeURIComponent(ADMIN_SECRET_PASSWORD),
+      },
+      body: JSON.stringify({
+        targetUserId,
+        prefix: '',
+      }),
+    });
+    const clearData = await clearRes.json();
+    expect(clearRes.status).toBe(200);
+    expect(clearData.success).toBe(true);
+    expect(clearData.prefix).toBeNull();
+  });
+
+  it('daily tasks automatically track login and card rolls', async () => {
+    // 1. Calling /me tracks daily_login
+    await fetch(`${baseUrl}/me`);
+
+    const tasksRes = await fetch(`${baseUrl}/tasks`);
+    const tasksData = await tasksRes.json();
+    expect(tasksRes.status).toBe(200);
+    expect(tasksData.tasks).toBeDefined();
+
+    const loginTask = tasksData.tasks.find((t: any) => t.taskKey === 'daily_login');
+    expect(loginTask).toBeDefined();
+    expect(loginTask.currentProgress).toBeGreaterThanOrEqual(1);
+
+    // 2. Clicker state returns clicker tasks
+    const clickerRes = await fetch(`${baseUrl}/clicker/state`);
+    const clickerData = await clickerRes.json();
+    expect(clickerRes.status).toBe(200);
+    expect(clickerData.success).toBe(true);
+    expect(Array.isArray(clickerData.tasks)).toBe(true);
+    const enterTask = clickerData.tasks.find((t: any) => t.id === 'daily_enter');
+    expect(enterTask).toBeDefined();
+    expect(enterTask.currentProgress).toBe(1);
+    expect(enterTask.isCompleted).toBe(true);
+
+    // 3. Claim clicker task
+    if (enterTask && !enterTask.isClaimed) {
+      const claimRes = await fetch(`${baseUrl}/clicker/claim-task`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: 'daily_enter' }),
+      });
+      const claimData = await claimRes.json();
+      expect(claimRes.status).toBe(200);
+      expect(claimData.success).toBe(true);
+      expect(claimData.claimedTaskId).toBe('daily_enter');
+    }
+  });
 });

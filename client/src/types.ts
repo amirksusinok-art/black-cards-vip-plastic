@@ -58,6 +58,7 @@ export interface UserProfile {
   maxFreeRolls: number;
   freeRollCooldownSeconds: number;
   tasksProgress: string;
+  prefix?: string | null;
 }
 
 export interface TaskItem {
@@ -196,6 +197,7 @@ export interface LeaderboardEntry {
     cardNumber: string;
     estimatedValue: number;
   };
+  prefix?: string | null;
 }
 
 export interface LeaderboardMyPosition {
@@ -208,6 +210,7 @@ export interface LeaderboardMyPosition {
   nextScore?: number | null;
   nextCardMeta?: any;
   cardMeta?: any;
+  prefix?: string | null;
 }
 
 export interface GameSettings {
@@ -228,6 +231,7 @@ export interface AdminUserItem {
   level: number;
   cardsCount: number;
   totalClicks: number;
+  prefix?: string | null;
   createdAt: string;
 }
 

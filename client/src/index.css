@@ -100,3 +100,41 @@ body {
 .animate-float-fade {
   animation: float-fade 0.75s ease-out forwards;
 }
+
+/* Vertical Digit Fall / Slot Reel Animation (сверху вниз) */
+@keyframes digitFall {
+  0% {
+    transform: translateY(-80%);
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0%);
+    opacity: 1;
+  }
+}
+
+.animate-digitFall {
+  animation: digitFall 0.08s ease-out;
+}
+
+@keyframes lockPop {
+  0% {
+    transform: translateY(-60%) scale(1.15);
+    opacity: 0.8;
+  }
+  65% {
+    transform: translateY(4%) scale(1.04);
+  }
+  100% {
+    transform: translateY(0%) scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-lockPop {
+  animation: lockPop 0.26s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+}
+
