@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CardDrop — TikTok Video Generator (ВБ БАНК)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #090A10;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 20px;
+      margin-bottom: 8px;
+      color: #E2E8F0;
+      text-align: center;
+    }
+    p {
+      font-size: 13px;
+      color: #94A3B8;
+      margin-bottom: 16px;
+      text-align: center;
+      max-width: 480px;
+    }
+    .video-container {
+      position: relative;
+      width: 360px;
+      height: 640px;
+      border-radius: 24px;
+      overflow: hidden;
+      box-shadow: 0 20px 50px rgba(168, 85, 247, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1);
+      background: #000;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .controls {
+      display: flex;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    button {
+      padding: 12px 20px;
+      border-radius: 12px;
+      border: none;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .btn-record {
+      background: linear-gradient(135deg, #A855F7, #EC4899);
+      color: #fff;
+      box-shadow: 0 8px 25px rgba(236, 72, 153, 0.4);
+    }
+    .btn-record:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(236, 72, 153, 0.6);
+    }
+    .btn-play {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    .btn-play:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #10B981;
+      height: 18px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>📦 Видео для TikTok: «ВБ Банк существует?»</h1>
+  <p>5-секундное готовое видео 9:16 со звуком, голографической картой ВБ Банка и вирусными субтитрами.</p>
+
+  <div class="video-container">
+    <canvas id="videoCanvas" width="720" height="1280"></canvas>
+  </div>
+
+  <div class="controls">
+    <button class="btn-play" onclick="playWithSound()">▶️ Включить со звуком</button>
+    <button class="btn-record" id="recordBtn" onclick="recordVideo()">🎬 Скачать видео (5 сек)</button>
+  </div>
+
+  <div class="status" id="statusText">Готово к экспорту</div>
+
+  <script>
+    const canvas = document.getElementById('videoCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('statusText');
+    const recordBtn = document.getElementById('recordBtn');
+
+    let startTime = performance.now();
+    let audioCtx = null;
+    let audioDest = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        audioDest = audioCtx.createMediaStreamDestination();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function playMemeSound() {
+      initAudio();
+      const now = audioCtx.currentTime;
+
+      // Deep dramatic 808 meme boom
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(140, now);
+      osc.frequency.exponentialRampToValueAtTime(32, now + 0.9);
+
+      gain.gain.setValueAtTime(0.8, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      if (audioDest) gain.connect(audioDest);
+
+      osc.start(now);
+      osc.stop(now + 1.25);
+
+      // Sparkle chime at 1.8s
+      setTimeout(() => {
+        if (!audioCtx) return;
+        const chimeNow = audioCtx.currentTime;
+        [523, 659, 784, 1046, 1318].forEach((freq, idx) => {
+          const o = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          o.type = 'triangle';
+          o.frequency.setValueAtTime(freq, chimeNow + idx * 0.08);
+          g.gain.setValueAtTime(0.2, chimeNow + idx * 0.08);
+          g.gain.exponentialRampToValueAtTime(0.001, chimeNow + idx * 0.08 + 0.4);
+          o.connect(g);
+          g.connect(audioCtx.destination);
+          if (audioDest) g.connect(audioDest);
+          o.start(chimeNow + idx * 0.08);
+          o.stop(chimeNow + idx * 0.08 + 0.45);
+        });
+      }, 1800);
+    }
+
+    function playWithSound() {
+      playMemeSound();
+      startTime = performance.now();
+      statusText.innerText = 'Воспроизведение со звуком...';
+    }
+
+    // Render loop (60 FPS)
+    function render(time) {
+      const elapsed = (time - startTime) / 1000;
+      const t = elapsed % 5.0; // 5-second loop
+
+      // 1. Background (Dark Luxury Purple Neon Gradient)
+      const bgGrad = ctx.createRadialGradient(360, 640, 100, 360, 640, 800);
+      bgGrad.addColorStop(0, '#2D0946');
+      bgGrad.addColorStop(0.5, '#160424');
+      bgGrad.addColorStop(1, '#08010E');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, 720, 1280);
+
+      // Neon background circles
+      const pulse = Math.sin(t * 3) * 0.15 + 0.85;
+      ctx.save();
+      ctx.shadowColor = 'rgba(203, 17, 171, 0.4)';
+      ctx.shadowBlur = 60 * pulse;
+      ctx.strokeStyle = 'rgba(217, 70, 239, 0.2)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(360, 520, 260, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      // 2. Draw 3D Floating Bank Card
+      ctx.save();
+      ctx.translate(360, 500);
+
+      // Floating gentle oscillation
+      const floatY = Math.sin(t * 2.5) * 12;
+      const tiltAngle = Math.sin(t * 2) * 0.05 - 0.03;
+      ctx.translate(0, floatY);
+      ctx.rotate(tiltAngle);
+
+      const cardW = 580;
+      const cardH = 365;
+      const cardR = 26;
+
+      // Card Shadow
+      ctx.shadowColor = 'rgba(203, 17, 171, 0.55)';
+      ctx.shadowBlur = 50;
+      ctx.shadowOffsetY = 25;
+
+      // Card Body Gradient (WB Deep Berry / Neon Magenta Carbon)
+      const cardGrad = ctx.createLinearGradient(-cardW / 2, -cardH / 2, cardW / 2, cardH / 2);
+      cardGrad.addColorStop(0, '#4A0E4E');
+      cardGrad.addColorStop(0.4, '#270438');
+      cardGrad.addColorStop(0.8, '#180224');
+      cardGrad.addColorStop(1, '#0C0113');
+
+      ctx.fillStyle = cardGrad;
+      roundRect(ctx, -cardW / 2, -cardH / 2, cardW, cardH, cardR);
+      ctx.fill();
+
+      // Holographic Rainbow Sheen Sweep
+      ctx.shadowColor = 'transparent';
+      ctx.save();
+      roundRect(ctx, -cardW / 2, -cardH / 2, cardW, cardH, cardR);
+      ctx.clip();
+
+      const holoPos = ((t * 0.6) % 1.6) - 0.3;
+      const holoGrad = ctx.createLinearGradient(
+        -cardW / 2 + cardW * holoPos, -cardH / 2,
+        -cardW / 2 + cardW * (holoPos + 0.4), cardH / 2
+      );
+      holoGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+      holoGrad.addColorStop(0.2, 'rgba(244, 114, 182, 0.25)');
+      holoGrad.addColorStop(0.4, 'rgba(168, 85, 247, 0.35)');
+      holoGrad.addColorStop(0.6, 'rgba(56, 189, 248, 0.3)');
+      holoGrad.addColorStop(0.8, 'rgba(250, 204, 21, 0.25)');
+      holoGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = holoGrad;
+      ctx.fillRect(-cardW / 2, -cardH / 2, cardW, cardH);
+
+      // Card Border Neon Glow
+      ctx.strokeStyle = 'rgba(244, 114, 182, 0.6)';
+      ctx.lineWidth = 2.5;
+      roundRect(ctx, -cardW / 2, -cardH / 2, cardW, cardH, cardR);
+      ctx.stroke();
+
+      // Card Logo: WB ВБ БАНК
+      // Purple WB badge
+      const badgeX = -cardW / 2 + 35;
+      const badgeY = -cardH / 2 + 35;
+      ctx.fillStyle = '#C026D3';
+      ctx.shadowColor = '#E879F9';
+      ctx.shadowBlur = 15;
+      roundRect(ctx, badgeX, badgeY, 56, 42, 10);
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 24px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('WB', badgeX + 28, badgeY + 30);
+
+      ctx.font = '800 26px -apple-system, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('ВБ БАНК', badgeX + 70, badgeY + 31);
+
+      // Contactless Wave Icon
+      drawWaveIcon(ctx, cardW / 2 - 50, -cardH / 2 + 55);
+
+      // Golden Metallic Chip
+      const chipX = -cardW / 2 + 35;
+      const chipY = -cardH / 2 + 105;
+      drawChip(ctx, chipX, chipY, 70, 52);
+
+      // Embossed Card Digits (7777 8890 2504 4431)
+      ctx.font = '700 36px monospace';
+      ctx.textAlign = 'left';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetY = 3;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText('7777   8890   2504   4431', -cardW / 2 + 35, 60);
+
+      // Bottom Row: Serial, Valid, CVV, Material
+      ctx.font = '700 12px monospace';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+      ctx.fillText('SERIAL', -cardW / 2 + 35, 115);
+      ctx.fillText('VALID THRU', -cardW / 2 + 190, 115);
+      ctx.fillText('CVV', -cardW / 2 + 340, 115);
+      ctx.fillText('MATERIAL', cardW / 2 - 145, 115);
+
+      ctx.font = '800 16px monospace';
+      ctx.fillStyle = '#FDE047';
+      ctx.fillText('CD-777001', -cardW / 2 + 35, 140);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText('12/30', -cardW / 2 + 190, 140);
+      ctx.fillText('777', -cardW / 2 + 340, 140);
+      ctx.fillStyle = '#38BDF8';
+      ctx.fillText('HOLOGRAPHIC', cardW / 2 - 145, 140);
+
+      ctx.restore();
+      ctx.restore();
+
+      // 3. TikTok Center Text Subtitles (Viral Font with Black Border)
+      // Pop-in bounce animation in first 0.4s
+      const scale = t < 0.4 ? 0.8 + 0.2 * (t / 0.4) : 1.0;
+      ctx.save();
+      ctx.translate(360, 890);
+      ctx.scale(scale, scale);
+
+      ctx.font = '900 40px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'center';
+
+      const line1 = 'Только не показывай эту карту';
+      const line2 = 'своей девушке / маме, иначе';
+      const line3 = 'она скупит весь Wildberries 😭📦';
+
+      drawTextWithOutline(ctx, line1, 0, -48);
+      drawTextWithOutline(ctx, line2, 0, 8);
+      drawTextWithOutline(ctx, line3, 0, 64);
+      ctx.restore();
+
+      // 4. Bottom CTA Pill
+      ctx.save();
+      ctx.translate(360, 1150);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.lineWidth = 1;
+      roundRect(ctx, -260, -32, 520, 64, 32);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = '800 20px -apple-system, sans-serif';
+      ctx.fillStyle = '#FACC15';
+      ctx.textAlign = 'center';
+      ctx.fillText('🎮 Бот: @thecardgamedrop_bot', 0, -4);
+      ctx.font = '600 15px -apple-system, sans-serif';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.fillText('Промокод +3 000 ₽: DROPMARKET', 0, 20);
+      ctx.restore();
+
+      requestAnimationFrame(render);
+    }
+
+    function drawTextWithOutline(ctx, text, x, y) {
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 10;
+      ctx.strokeStyle = '#000000';
+      ctx.strokeText(text, x, y);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(text, x, y);
+    }
+
+    function drawChip(ctx, x, y, w, h) {
+      ctx.fillStyle = '#EAB308';
+      roundRect(ctx, x, y, w, h, 8);
+      ctx.fill();
+      ctx.strokeStyle = '#713F12';
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, x, y, w, h, 8);
+      ctx.stroke();
+      // chip internal pattern
+      ctx.beginPath();
+      ctx.moveTo(x + w / 3, y); ctx.lineTo(x + w / 3, y + h);
+      ctx.moveTo(x + (w * 2) / 3, y); ctx.lineTo(x + (w * 2) / 3, y + h);
+      ctx.moveTo(x, y + h / 2); ctx.lineTo(x + w, y + h / 2);
+      ctx.stroke();
+    }
+
+    function drawWaveIcon(ctx, x, y) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      [8, 16, 24].forEach(r => {
+        ctx.beginPath();
+        ctx.arc(x, y, r, -Math.PI / 3, Math.PI / 3);
+        ctx.stroke();
+      });
+    }
+
+    function roundRect(ctx, x, y, width, height, radius) {
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + width - radius, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+      ctx.lineTo(x + width, y + height - radius);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+      ctx.lineTo(x + radius, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+    }
+
+    // Record Video Handler (MediaRecorder 5 Seconds)
+    async function recordVideo() {
+      initAudio();
+      recordBtn.disabled = true;
+      recordBtn.innerText = '⏳ Запись (5 сек)...';
+      statusText.innerText = 'Идёт захват кадров 60 FPS...';
+
+      playMemeSound();
+      startTime = performance.now();
+
+      const canvasStream = canvas.captureStream(60);
+      const combinedStream = new MediaStream([
+        ...canvasStream.getVideoTracks(),
+        ...(audioDest ? audioDest.stream.getAudioTracks() : [])
+      ]);
+
+      const chunks = [];
+      const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=avc1')
+        ? 'video/mp4;codecs=avc1'
+        : 'video/webm;codecs=vp9';
+
+      const recorder = new MediaRecorder(combinedStream, {
+        mimeType: MediaRecorder.isTypeSupported(mimeType) ? mimeType : 'video/webm',
+        videoBitsPerSecond: 8000000,
+      });
+
+      recorder.ondataavailable = e => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: chunks[0]?.type || 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `wb_bank_tiktok_${Date.now()}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        recordBtn.disabled = false;
+        recordBtn.innerText = '🎬 Скачать видео (5 сек)';
+        statusText.innerText = '✅ Видео успешно сохранено на устройство!';
+      };
+
+      recorder.start();
+      setTimeout(() => {
+        recorder.stop();
+      }, 5100);
+    }
+
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>
