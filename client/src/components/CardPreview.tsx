@@ -207,9 +207,9 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
             : undefined,
         transition: rotateX === 0 ? 'transform 0.4s ease-out' : 'none',
       }}
-      className={`relative w-full aspect-[1.58/1] max-w-[370px] rounded-2xl border p-5 sm:p-6 flex flex-col justify-between overflow-hidden cursor-pointer select-none transition-shadow duration-300 ${getMaterialStyles(
+      className={`relative w-full aspect-[1.58/1] max-w-[360px] shrink-0 rounded-2xl border p-5 sm:p-6 flex flex-col justify-between overflow-hidden cursor-pointer select-none transition-shadow duration-300 box-border ${getMaterialStyles(
         targetMaterial
-      )} ${isRolling ? 'ring-2 ring-amber-400/40 shadow-[0_0_35px_rgba(251,191,36,0.3)]' : ''} ${className}`}
+      )} ${isRolling ? 'shadow-[inset_0_0_0_2px_rgba(251,191,36,0.6),0_0_35px_rgba(251,191,36,0.3)]' : ''} ${className}`}
     >
       {/* Specular Glare Overlay */}
       <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent pointer-events-none" />
@@ -223,7 +223,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
       <div className="relative z-10 flex items-center justify-between">
         {isRolling ? (
           /* Animated Bank Slot Reel */
-          <div className="h-6 overflow-hidden relative">
+          <div className="h-6 overflow-hidden relative flex items-center">
             <div
               className="flex flex-col"
               style={{
@@ -243,7 +243,9 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
             </div>
           </div>
         ) : (
-          getBankBranding(targetBank).emblem
+          <div className="h-6 flex items-center">
+            {getBankBranding(targetBank).emblem}
+          </div>
         )}
 
         <div className="flex items-center gap-2">
@@ -260,7 +262,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
       {/* Middle Row: EMV Chip & Rarity Score */}
       <div className="relative z-10 flex items-center justify-between my-auto pt-2">
         {/* Realistic EMV Chip */}
-        <div className="w-11 h-8 rounded-md bg-gradient-to-br from-amber-200 via-amber-400 to-amber-600 p-[1px] shadow-md border border-amber-500/40">
+        <div className="w-11 h-8 rounded-md bg-gradient-to-br from-amber-200 via-amber-400 to-amber-600 p-[1px] shadow-md border border-amber-500/40 shrink-0">
           <div className="w-full h-full rounded-[4px] bg-amber-400/90 grid grid-cols-3 grid-rows-2 gap-[1px] p-[2px]">
             <div className="border border-amber-700/40 rounded-[1px]" />
             <div className="border border-amber-700/40 rounded-[1px]" />
@@ -271,16 +273,18 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
           </div>
         </div>
 
-        {activeCard && (
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] text-white/50 uppercase tracking-widest font-mono">
-              ОЦЕНКА
-            </span>
-            <span className="text-xs font-bold font-mono tracking-tight text-white/90">
-              ★ {isRolling && !reelActive ? '??' : activeCard.collector_score}
-            </span>
-          </div>
-        )}
+        <div className="h-8 flex flex-col items-end justify-center shrink-0">
+          {activeCard && (
+            <>
+              <span className="text-[10px] text-white/50 uppercase tracking-widest font-mono">
+                ОЦЕНКА
+              </span>
+              <span className="text-xs font-bold font-mono tracking-tight text-white/90">
+                ★ {isRolling && !reelActive ? '??' : activeCard.collector_score}
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Bottom Area: 16-Digit Number (With Slot Reel) & Meta */}
@@ -341,7 +345,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
           </div>
         ) : (
           /* Static Card Number */
-          <div className="font-mono text-lg sm:text-xl font-bold tracking-[0.16em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+          <div className="h-7 flex items-center font-mono text-lg sm:text-xl font-bold tracking-[0.16em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
             {targetCardNumber}
           </div>
         )}

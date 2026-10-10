@@ -43,6 +43,24 @@ describe('Avita Merchant Engine & Integration Tests', () => {
     expect(evaluation.initialPrice).toBe(0);
   });
 
+  it('Evaluates standard/common cards within 10-40% range of case price (50-200 ₽)', () => {
+    const commonCard = {
+      id: 103,
+      material: 'Classic Plastic',
+      category: 'Standard',
+      collector_score: 25,
+      is_free_roll: false,
+    };
+
+    const evaluation = evaluateSingleCard(commonCard);
+    expect(evaluation.isEligible).toBe(true);
+    // Case price is 500 ₽ -> 10% is 50 ₽, 40% is 200 ₽
+    expect(evaluation.initialPrice).toBeGreaterThanOrEqual(50);
+    expect(evaluation.initialPrice).toBeLessThanOrEqual(150);
+    expect(evaluation.maxPrice).toBeLessThanOrEqual(200);
+    expect(evaluation.maxPrice).toBeGreaterThan(evaluation.initialPrice);
+  });
+
   it('Batch evaluation correctly sums prices and filters ineligible cards', () => {
     const cards = [
       { id: 1, material: 'Gold', category: 'Pair', collector_score: 50, is_free_roll: false },

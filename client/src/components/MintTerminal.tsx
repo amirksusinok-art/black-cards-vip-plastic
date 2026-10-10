@@ -211,20 +211,27 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
           }}
         />
 
-        {isRolling ? (
-          <button
-            onClick={handleReelComplete}
-            className="text-xs font-mono text-amber-400/90 hover:text-amber-300 bg-white/5 border border-white/10 px-3.5 py-1.5 rounded-full mt-3 flex items-center gap-1.5 active:scale-95 transition-all shadow-sm"
-          >
-            <FastForward className="w-3.5 h-3.5 text-amber-400" />
-            <span>Пропустить анимацию</span>
-          </button>
-        ) : latestCard ? (
-          <p className="text-[11px] text-white/40 font-mono mt-2 flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-amber-400/70" />
-            Нажмите на карту для подробного просмотра
-          </p>
-        ) : null}
+        {/* Stable Fixed-Height Action Slot below card to lock card dimensions */}
+        <div className="h-10 mt-2 flex items-center justify-center shrink-0">
+          {isRolling ? (
+            <button
+              onClick={handleReelComplete}
+              className="text-xs font-mono text-amber-400/90 hover:text-amber-300 bg-white/5 border border-white/10 px-3.5 py-1.5 rounded-full flex items-center gap-1.5 active:scale-95 transition-all shadow-sm"
+            >
+              <FastForward className="w-3.5 h-3.5 text-amber-400" />
+              <span>Пропустить анимацию</span>
+            </button>
+          ) : latestCard ? (
+            <p className="text-[11px] text-white/40 font-mono flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-amber-400/70" />
+              Нажмите на карту для подробного просмотра
+            </p>
+          ) : (
+            <p className="text-[11px] text-white/30 font-mono flex items-center gap-1">
+              Нажмите «Выпустить карту» для начала
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Mode & Timer Status Bar */}

@@ -91,9 +91,11 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#08090C] text-[#F3F4F6]">
-      {/* Top Header */}
+      {/* Top Header with Quick Navigation */}
       <TopNav
         user={user}
+        currentScreen={currentScreen}
+        onSelectScreen={(screen) => setCurrentScreen(screen)}
         onOpenMenu={() => setMenuOpen(true)}
         onOpenTasks={() => setCurrentScreen('tasks')}
       />
