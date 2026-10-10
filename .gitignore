@@ -7,3 +7,4 @@ client/dist/
 npm-debug.log*
 .DS_Store
 Thumbs.db
+data_local_store.json
