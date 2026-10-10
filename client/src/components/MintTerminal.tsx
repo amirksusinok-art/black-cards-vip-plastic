@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card, UserProfile } from '../types.js';
+import { Card, UserProfile, CaseTier } from '../types.js';
 import { CardPreview } from './CardPreview.js';
 import { api } from '../utils/api.js';
-import { hapticImpact, hapticNotification, jackpotHaptics } from '../utils/telegram.js';
+import { hapticImpact, hapticNotification, jackpotHaptics, hapticSelection } from '../utils/telegram.js';
 import { playJackpotJingle } from '../utils/audio.js';
 import confetti from 'canvas-confetti';
 import { Play, RotateCw, AlertTriangle, Sparkles, SlidersHorizontal, X, FastForward, TrendingUp, Layers, ChevronDown, ChevronUp } from 'lucide-react';
@@ -13,6 +13,65 @@ interface MintTerminalProps {
   onOpenCardDetails: (card: Card) => void;
 }
 
+interface CaseTierConfig {
+  id: CaseTier;
+  name: string;
+  price: number;
+  luckMultiplier: number;
+  label: string;
+  badge: string;
+  accentColor: string;
+  borderColor: string;
+  bgGradient: string;
+}
+
+const CASE_TIERS: CaseTierConfig[] = [
+  {
+    id: 'standard',
+    name: 'Стандарт',
+    price: 500,
+    luckMultiplier: 1.0,
+    label: 'x1.0',
+    badge: '1.0x',
+    accentColor: 'text-emerald-400',
+    borderColor: 'border-emerald-500/40',
+    bgGradient: 'from-emerald-950/40 via-[#141822] to-[#0E1118]',
+  },
+  {
+    id: 'go',
+    name: 'Go',
+    price: 1000,
+    luckMultiplier: 1.5,
+    label: 'x1.5',
+    badge: '1.5x',
+    accentColor: 'text-cyan-400',
+    borderColor: 'border-cyan-500/40',
+    bgGradient: 'from-cyan-950/40 via-[#131926] to-[#0E1118]',
+  },
+  {
+    id: 'plus',
+    name: 'Plus',
+    price: 2000,
+    luckMultiplier: 2.0,
+    label: 'x2.0',
+    badge: '2.0x',
+    accentColor: 'text-amber-400',
+    borderColor: 'border-amber-500/40',
+    bgGradient: 'from-amber-950/40 via-[#191924] to-[#0E1118]',
+  },
+  {
+    id: 'elite',
+    name: 'Элит',
+    price: 5000,
+    luckMultiplier: 3.0,
+    label: 'x3.0',
+    badge: '3.0x',
+    accentColor: 'text-fuchsia-400',
+    borderColor: 'border-fuchsia-500/40',
+    bgGradient: 'from-fuchsia-950/40 via-[#1c142b] to-[#0E1118]',
+  },
+];
+
 export const MintTerminal: React.FC<MintTerminalProps> = ({
   user,
   onRefreshUser,
@@ -20,6 +79,8 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
 }) => {
   const [latestCard, setLatestCard] = useState<Card | null>(null);
   const [isRolling, setIsRolling] = useState(false);
+  const [rollSpeed, setRollSpeed] = useState<'normal' | 'fast'>('normal');
+  const [selectedTier, setSelectedTier] = useState<CaseTier>('standard');
   const [pendingCard, setPendingCard] = useState<Card | null>(null);
   const [lockedBlockCount, setLockedBlockCount] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -62,6 +123,11 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
   const [showAutoModal, setShowAutoModal] = useState(false);
   const [autoSpinCount, setAutoSpinCount] = useState(10);
   const [isAutoRolling, setIsAutoRolling] = useState(false);
+  const [pendingAutoSummary, setPendingAutoSummary] = useState<{
+    completed: number;
+    cards: Card[];
+    stoppedReason: string;
+  } | null>(null);
   const [autoSummary, setAutoSummary] = useState<{
     completed: number;
     cards: Card[];
@@ -86,25 +152,27 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
   const coins = user?.coins ?? 1500;
   const isBomzhMode = coins < 500;
   const freeRollsLeft = (user?.maxFreeRolls || 150) - (user?.freeRollsToday || 0);
+  const currentTierConfig = CASE_TIERS.find((t) => t.id === selectedTier) || CASE_TIERS[0];
 
-  // Handle Regular Roll (500 Coins)
+  // Handle Regular Roll (Using Selected Tier)
   const handleRegularIssue = async () => {
     if (isRolling || isAutoRolling) return;
-    if (coins < 500) {
-      setErrorMessage('Недостаточно средств для стандартного выпуска');
+    if (coins < currentTierConfig.price) {
+      setErrorMessage(`Недостаточно средств для выпуска «${currentTierConfig.name}» (нужно ${currentTierConfig.price.toLocaleString('ru-RU')} ₽)`);
       hapticNotification('error');
       return;
     }
 
     setErrorMessage(null);
     setLockedBlockCount(0);
+    setRollSpeed('normal');
     setIsRolling(true);
     hapticImpact('heavy');
 
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     try {
-      const res = await api.issueCard(requestId);
+      const res = await api.issueCard(requestId, selectedTier);
       setPendingCard(res.card);
       onRefreshUser();
     } catch (err: any) {
@@ -130,6 +198,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
 
     setErrorMessage(null);
     setLockedBlockCount(0);
+    setRollSpeed('normal');
     setIsRolling(true);
     hapticImpact('heavy');
 
@@ -147,10 +216,10 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
     }
   };
 
-  // Handle Auto-Roll (Batch up to 100 spins, fast)
+  // Handle Auto-Roll (Fast card reel animation, then statistics modal)
   const handleStartAutoRoll = async () => {
-    if (coins < 500) {
-      setErrorMessage('Недостаточно средств для запуска автопрокрута');
+    if (coins < currentTierConfig.price) {
+      setErrorMessage(`Недостаточно средств для автопрокрута (нужно от ${currentTierConfig.price.toLocaleString('ru-RU')} ₽)`);
       hapticNotification('error');
       return;
     }
@@ -163,28 +232,27 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
     const requestId = `auto_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     try {
-      const res = await api.autoIssueCards(autoSpinCount, requestId);
-      setAutoSummary({
+      const res = await api.autoIssueCards(autoSpinCount, requestId, selectedTier);
+      const summaryData = {
         completed: res.spinsCompleted,
         cards: res.cards,
         stoppedReason: res.stoppedReason,
-      });
+      };
 
       if (res.cards.length > 0) {
-        setLatestCard(res.cards[res.cards.length - 1]);
-        confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.6 },
-          colors: ['#D4AF37', '#00FFCC', '#FFFFFF'],
-        });
+        // Fast reel spin on the last generated card!
+        const lastCard = res.cards[res.cards.length - 1];
+        setPendingAutoSummary(summaryData);
+        setPendingCard(lastCard);
+        setRollSpeed('fast');
+        setIsRolling(true);
+      } else {
+        setAutoSummary(summaryData);
       }
 
       if (res.stoppedReason === 'Недостаточно средств') {
         setErrorMessage('Автопрокрут остановлен: Недостаточно средств');
         hapticNotification('warning');
-      } else {
-        hapticNotification('success');
       }
 
       onRefreshUser();
@@ -223,9 +291,23 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
         });
       }
     }
+
+    // If an auto-roll batch completed, pop up the statistics modal!
+    if (pendingAutoSummary) {
+      setAutoSummary(pendingAutoSummary);
+      setPendingAutoSummary(null);
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.6 },
+        colors: ['#D4AF37', '#00FFCC', '#FFFFFF'],
+      });
+      hapticNotification('success');
+    }
+
     setIsRolling(false);
     setPendingCard(null);
-  }, [pendingCard]);
+  }, [pendingCard, pendingAutoSummary]);
 
   return (
     <div className="w-full flex flex-col items-center justify-between min-h-[calc(100vh-70px)] px-4 py-4 max-w-md mx-auto select-none">
@@ -253,6 +335,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
           card={latestCard}
           targetCard={pendingCard}
           isRolling={isRolling && !!pendingCard}
+          rollSpeed={rollSpeed}
           onRollComplete={handleReelComplete}
           onLockedCountChange={handleLockedCountChange}
           interactive={!isRolling}
@@ -328,7 +411,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
       </div>
 
       {/* Mode & Timer Status Bar */}
-      <div className="w-full my-3 flex items-center justify-between px-3 py-2 rounded-xl bg-[#12151D] border border-white/5 text-xs font-mono">
+      <div className="w-full my-2.5 flex items-center justify-between px-3 py-2 rounded-xl bg-[#12151D] border border-white/5 text-xs font-mono">
         <div className="flex items-center gap-1.5">
           <span
             className={`w-2 h-2 rounded-full ${
@@ -336,7 +419,9 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
             }`}
           />
           <span className="text-white/80 font-medium">
-            {isBomzhMode ? 'Режим «БОМЖ» (0 ₽)' : 'Стандартный выпуск (500 ₽)'}
+            {isBomzhMode
+              ? 'Режим «БОМЖ» (0 ₽)'
+              : `Кейс «${currentTierConfig.name}» (${currentTierConfig.price.toLocaleString('ru-RU')} ₽)`}
           </span>
         </div>
 
@@ -345,12 +430,14 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
             {cooldown > 0 ? `Таймер: ${cooldown}с` : `Готов (${freeRollsLeft}/150)`}
           </span>
         ) : (
-          <span className="text-emerald-400 text-[11px]">Баланс в норме</span>
+          <span className="text-emerald-400 text-[11px] font-bold">
+            Удача {currentTierConfig.badge}
+          </span>
         )}
       </div>
 
       {/* 5. Two Compact Panels (Bank & Material of last drop) */}
-      <div className="w-full grid grid-cols-2 gap-2 mb-4">
+      <div className="w-full grid grid-cols-2 gap-2 mb-3">
         <div className="flex flex-col p-2.5 rounded-xl bg-[#12151D] border border-white/5">
           <span className="text-[10px] text-white/40 uppercase font-mono">БАНК</span>
           <span className="text-xs font-bold text-white/90 truncate mt-0.5">
@@ -365,6 +452,58 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Case Tiers Selector (Стандарт, Go, Plus, Элит) */}
+      {!isBomzhMode && (
+        <div className="w-full flex flex-col gap-1.5 mb-2.5">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[10px] text-white/50 uppercase font-mono tracking-wider">
+              ВЫБОР КЕЙСА:
+            </span>
+            <span className={`text-[10px] font-mono font-bold ${currentTierConfig.accentColor}`}>
+              {currentTierConfig.name} • {currentTierConfig.label}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-4 gap-1.5">
+            {CASE_TIERS.map((tier) => {
+              const isSelected = selectedTier === tier.id;
+              const canAfford = coins >= tier.price;
+
+              return (
+                <button
+                  key={tier.id}
+                  onClick={() => {
+                    hapticSelection();
+                    setSelectedTier(tier.id);
+                  }}
+                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border transition-all text-center relative overflow-hidden ${
+                    isSelected
+                      ? `bg-gradient-to-b ${tier.bgGradient} ${tier.borderColor} ring-1 ring-white/20 shadow-md`
+                      : 'bg-[#12151D] border-white/5 hover:border-white/10 opacity-75 hover:opacity-100'
+                  }`}
+                >
+                  <span className={`text-xs font-bold leading-tight ${isSelected ? tier.accentColor : 'text-white/80'}`}>
+                    {tier.name}
+                  </span>
+                  <span className="text-[11px] font-mono font-black text-white mt-0.5">
+                    {tier.price.toLocaleString('ru-RU')} ₽
+                  </span>
+                  <span
+                    className={`mt-1 px-1.5 py-0.2 rounded-full text-[8px] font-mono font-bold ${
+                      isSelected
+                        ? 'bg-white/20 text-white'
+                        : 'bg-white/5 text-white/40'
+                    }`}
+                  >
+                    {tier.badge}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 6. Action Buttons: Main Mint Button & Auto-Roll */}
       <div className="w-full flex flex-col gap-2">
@@ -389,19 +528,25 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
         ) : (
           <button
             onClick={handleRegularIssue}
-            disabled={isRolling || isAutoRolling}
-            className="w-full py-4 rounded-2xl font-bold text-sm tracking-wide bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 hover:brightness-110 text-black shadow-[0_8px_25px_rgba(34,197,94,0.3)] active:scale-[0.98] transition-all flex items-center justify-center gap-2 border border-emerald-400/30"
+            disabled={isRolling || isAutoRolling || coins < currentTierConfig.price}
+            className={`w-full py-4 rounded-2xl font-bold text-sm tracking-wide shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 border ${
+              coins < currentTierConfig.price
+                ? 'bg-neutral-800 text-neutral-500 border-white/5 cursor-not-allowed'
+                : 'bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 hover:brightness-110 text-black border-emerald-400/30 shadow-[0_8px_25px_rgba(34,197,94,0.3)]'
+            }`}
           >
             <Play className={`w-4 h-4 fill-black ${isRolling ? 'animate-spin' : ''}`} />
-            {isRolling ? 'ВЫПУСК КАРТЫ...' : 'ВЫПУСТИТЬ КАРТУ (500 ₽)'}
+            {isRolling
+              ? 'ВЫПУСК КАРТЫ...'
+              : `ВЫПУСТИТЬ КАРТУ (${currentTierConfig.price.toLocaleString('ru-RU')} ₽)`}
           </button>
         )}
 
         {/* Auto-Roll Trigger Button */}
         <button
           onClick={() => {
-            if (coins < 500) {
-              setErrorMessage('Недостаточно средств для автопрокрута (нужно от 500 ₽)');
+            if (coins < currentTierConfig.price) {
+              setErrorMessage(`Недостаточно средств для автопрокрута (нужно от ${currentTierConfig.price.toLocaleString('ru-RU')} ₽)`);
               hapticNotification('error');
               return;
             }
@@ -411,7 +556,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
           className="w-full py-2.5 rounded-xl bg-[#14171F] hover:bg-[#1A1F2B] active:scale-[0.98] border border-white/10 text-white/80 text-xs font-semibold tracking-wider uppercase transition-all flex items-center justify-center gap-2"
         >
           <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
-          {isAutoRolling ? 'АВТОПРОКРУТ В ПРОЦЕССЕ...' : 'АВТОПРОКРУТ (ДО 100 КАРТ)'}
+          {isAutoRolling ? 'АВТОПРОКРУТ В ПРОЦЕССЕ...' : `АВТОПРОКРУТ (${currentTierConfig.name} • ДО 100 КАРТ)`}
         </button>
       </div>
 
@@ -422,7 +567,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="w-4 h-4 text-amber-400" />
-                <h3 className="font-bold text-sm text-white">Автопрокрут CardDrop</h3>
+                <h3 className="font-bold text-sm text-white">Автопрокрут • Кейс «{currentTierConfig.name}»</h3>
               </div>
               <button
                 onClick={() => setShowAutoModal(false)}
@@ -433,14 +578,14 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
             </div>
 
             <p className="text-xs text-white/60">
-              Быстрый автоматический выпуск серии карт на повышенной скорости. Если монеты закончатся, выпуск мгновенно остановится.
+              Быстрый автоматический выпуск серии карт на повышенной скорости анимации. При нехватке монет выпуск завершается с показом сводной статистики.
             </p>
 
             {/* Quick Count Selectors */}
             <div className="flex flex-col gap-2">
               <label className="text-[11px] text-white/50 font-mono">
                 КОЛИЧЕСТВО ВЫПУСКОВ: <strong className="text-white">{autoSpinCount}</strong> (Стоимость:{' '}
-                {(autoSpinCount * 500).toLocaleString('ru-RU')} ₽)
+                <span className="text-emerald-400 font-bold">{(autoSpinCount * currentTierConfig.price).toLocaleString('ru-RU')} ₽</span>)
               </label>
               <div className="grid grid-cols-5 gap-1.5">
                 {[1, 10, 25, 50, 100].map((n) => (
@@ -498,7 +643,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
                 onClick={handleStartAutoRoll}
                 className="flex-1 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 text-black text-xs font-bold shadow-lg"
               >
-                Запустить ({autoSpinCount} раз)
+                Запустить ({autoSpinCount} шт. • {(autoSpinCount * currentTierConfig.price).toLocaleString('ru-RU')} ₽)
               </button>
             </div>
           </div>

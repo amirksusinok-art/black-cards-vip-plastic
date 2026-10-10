@@ -13,6 +13,7 @@ import {
   FileText,
   ChevronRight,
   Flame,
+  Coins,
 } from 'lucide-react';
 import { hapticSelection } from '../utils/telegram.js';
 
@@ -20,6 +21,7 @@ export type NavScreen =
   | 'mint'
   | 'collection'
   | 'avita'
+  | 'earn'
   | 'albums'
   | 'tasks'
   | 'shop'
@@ -54,12 +56,22 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({
     {
       id: 'mint',
       title: 'Выпуск карт',
-      subtitle: 'Терминал крутки • 500 ₽ / БОМЖ',
+      subtitle: 'Терминал крутки • Кейсы от 0 ₽ до 5 000 ₽',
       badge: 'ГЛАВНАЯ',
       icon: <CreditCard className="w-5 h-5 text-emerald-400" />,
       glowBorder: 'border-emerald-500/40 hover:border-emerald-400 shadow-emerald-950/30',
       bgGradient: 'from-emerald-950/40 via-[#131722] to-[#10121A]',
       accentText: 'text-emerald-400',
+    },
+    {
+      id: 'earn',
+      title: 'Заработок ₽ (Кликер)',
+      subtitle: '3D монета рубля • Энергия и прокачка',
+      badge: 'ДОХОД',
+      icon: <Coins className="w-5 h-5 text-yellow-400" />,
+      glowBorder: 'border-yellow-500/40 hover:border-yellow-400 shadow-yellow-950/30',
+      bgGradient: 'from-yellow-950/40 via-[#181720] to-[#10121A]',
+      accentText: 'text-yellow-400',
     },
     {
       id: 'avita',

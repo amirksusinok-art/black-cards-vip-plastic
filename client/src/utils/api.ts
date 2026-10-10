@@ -10,6 +10,8 @@ import {
   AvitaSession,
   AvitaDeal,
   AvitaStatus,
+  CaseTier,
+  ClickerState,
 } from '../types.js';
 
 const API_BASE = '/api';
@@ -38,10 +40,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 export const api = {
   getMe: () => request<{ success: boolean; user: UserProfile }>('/me'),
 
-  issueCard: (requestId: string) =>
+  issueCard: (requestId: string, tier: CaseTier = 'standard') =>
     request<{ success: boolean; card: Card; coinsRemaining: number }>('/cards/issue', {
       method: 'POST',
-      body: JSON.stringify({ requestId }),
+      body: JSON.stringify({ requestId, tier }),
     }),
 
   freeIssueCard: (requestId: string) =>
@@ -56,7 +58,7 @@ export const api = {
       body: JSON.stringify({ requestId }),
     }),
 
-  autoIssueCards: (count: number, requestId: string) =>
+  autoIssueCards: (count: number, requestId: string, tier: CaseTier = 'standard') =>
     request<{
       success: boolean;
       requestedSpins: number;
@@ -66,7 +68,7 @@ export const api = {
       cards: Card[];
     }>('/cards/auto-issue', {
       method: 'POST',
-      body: JSON.stringify({ count, requestId }),
+      body: JSON.stringify({ count, requestId, tier }),
     }),
 
   getCards: (params: {
@@ -183,4 +185,47 @@ export const api = {
 
   getAvitaHistory: () =>
     request<{ success: boolean; deals: AvitaDeal[] }>('/avita/history'),
+
+  // Clicker Endpoints
+  getClickerState: () =>
+    request<{ success: boolean; state: ClickerState }>('/clicker/state'),
+
+  clickerTap: (count: number = 1) =>
+    request<{
+      success: boolean;
+      earnedCoins: number;
+      coins: number;
+      energy: number;
+      maxEnergy: number;
+      totalTaps: number;
+      tapsToday: number;
+    }>('/clicker/tap', {
+      method: 'POST',
+      body: JSON.stringify({ count }),
+    }),
+
+  upgradeClickerPower: () =>
+    request<{
+      success: boolean;
+      newLevel: number;
+      coinsPerTap: number;
+      coinsRemaining: number;
+      nextCost: number | null;
+    }>('/clicker/upgrade-power', { method: 'POST' }),
+
+  upgradeClickerEnergy: () =>
+    request<{
+      success: boolean;
+      newLevel: number;
+      secondsPerEnergy: number;
+      coinsRemaining: number;
+      nextCost: number | null;
+    }>('/clicker/upgrade-energy', { method: 'POST' }),
+
+  claimClickerDailyHelp: () =>
+    request<{
+      success: boolean;
+      addedCoins: number;
+      totalCoins: number;
+    }>('/clicker/claim-daily-help', { method: 'POST' }),
 };

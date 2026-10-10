@@ -143,3 +143,34 @@ export interface AvitaStatus {
   secondsRemaining: number;
 }
 
+export type CaseTier = 'standard' | 'go' | 'plus' | 'elite';
+
+export interface ClickerTaskStatus {
+  id: string;
+  title: string;
+  desc: string;
+  rewardCoins: number;
+  targetCount: number;
+  currentProgress: number;
+  isCompleted: boolean;
+  isClaimed: boolean;
+}
+
+export interface ClickerState {
+  coins: number;
+  energy: number;
+  maxEnergy: number;
+  energyPerSec: number;
+  powerLevel: number;
+  energyLevel: number;
+  powerCoinsPerTap: number;
+  nextPowerCost: number | null;
+  nextPowerCoinsPerTap: number | null;
+  nextEnergyCost: number | null;
+  nextEnergySec: number | null;
+  totalTaps: number;
+  canClaimDailyHelp: boolean;
+  dailyHelpCoins: number;
+  tasks: ClickerTaskStatus[];
+}
+

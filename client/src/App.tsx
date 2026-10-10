@@ -10,6 +10,7 @@ import { AlbumsView } from './components/AlbumsView.js';
 import { TasksView } from './components/TasksView.js';
 import { StarsShopView } from './components/StarsShopView.js';
 import { ProfileView } from './components/ProfileView.js';
+import { ClickerView } from './components/ClickerView.js';
 import { NavigationMenu, NavScreen } from './components/NavigationMenu.js';
 import { CardDetailModal } from './components/CardDetailModal.js';
 import { RulesModal } from './components/RulesModal.js';
@@ -115,6 +116,13 @@ export const App: React.FC = () => {
             favorites={user?.favorites || []}
             onOpenCardDetails={(card) => setSelectedCard(card)}
             onToggleFavorite={handleToggleFavorite}
+          />
+        )}
+
+        {currentScreen === 'earn' && (
+          <ClickerView
+            user={user}
+            onRefreshUser={loadUserData}
           />
         )}
 

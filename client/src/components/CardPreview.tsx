@@ -7,6 +7,7 @@ export interface CardPreviewProps {
   card?: Card | null;
   targetCard?: Card | null;
   isRolling?: boolean;
+  rollSpeed?: 'normal' | 'fast';
   onRollComplete?: () => void;
   interactive?: boolean;
   className?: string;
@@ -28,6 +29,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
   card,
   targetCard,
   isRolling = false,
+  rollSpeed = 'normal',
   onRollComplete,
   interactive = true,
   className = '',
@@ -75,36 +77,38 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
       setLockedBlocks(0);
       onLockedCountChangeRef.current?.(0);
 
+      const isFast = rollSpeed === 'fast';
+
       const startTimer = setTimeout(() => {
         setReelActive(true);
         setBankReelActive(true);
-      }, 40);
+      }, isFast ? 20 : 40);
 
-      // Progressive locking timings
+      // Progressive locking timings (accelerated when rollSpeed === 'fast')
       const t1 = setTimeout(() => {
         setLockedBlocks(1);
         onLockedCountChangeRef.current?.(1);
         hapticImpact('light');
-      }, 650);
+      }, isFast ? 180 : 650);
 
       const t2 = setTimeout(() => {
         setLockedBlocks(2);
         onLockedCountChangeRef.current?.(2);
         hapticImpact('light');
-      }, 1250);
+      }, isFast ? 340 : 1250);
 
       const t3 = setTimeout(() => {
         setLockedBlocks(3);
         onLockedCountChangeRef.current?.(3);
         hapticImpact('medium');
-      }, 1750);
+      }, isFast ? 500 : 1750);
 
       const t4 = setTimeout(() => {
         setLockedBlocks(4);
         onLockedCountChangeRef.current?.(4);
         hapticImpact('heavy');
         onRollCompleteRef.current?.();
-      }, 2300);
+      }, isFast ? 700 : 2300);
 
       return () => {
         clearTimeout(startTimer);
@@ -118,7 +122,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
       setBankReelActive(false);
       setLockedBlocks(4);
     }
-  }, [isRolling, targetCardKey]);
+  }, [isRolling, targetCardKey, rollSpeed]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!interactive || isRolling || !cardRef.current) return;
@@ -347,7 +351,9 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
                   ? `translateY(-${targetBankIndex * (isCompact ? 18 : 24)}px)`
                   : 'translateY(0px)',
                 transition: bankReelActive
-                  ? 'transform 1350ms cubic-bezier(0.12, 0.85, 0.3, 1)'
+                  ? rollSpeed === 'fast'
+                    ? 'transform 450ms cubic-bezier(0.12, 0.85, 0.3, 1)'
+                    : 'transform 1350ms cubic-bezier(0.12, 0.85, 0.3, 1)'
                   : 'none',
               }}
             >
@@ -431,8 +437,9 @@ export const CardPreview: React.FC<CardPreviewProps> = ({
             }`}
           >
             {[0, 1, 2, 3].map((blockIdx) => {
-              const blockDelay = blockIdx * 180;
-              const blockDuration = 650 + blockIdx * 500;
+              const isFast = rollSpeed === 'fast';
+              const blockDelay = isFast ? blockIdx * 60 : blockIdx * 180;
+              const blockDuration = isFast ? 220 + blockIdx * 120 : 650 + blockIdx * 500;
               const isLocked = lockedBlocks > blockIdx;
 
               return (

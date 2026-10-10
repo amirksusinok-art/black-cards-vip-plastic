@@ -1,7 +1,7 @@
 import React from 'react';
 import { UserProfile } from '../types.js';
 import { NavScreen } from './NavigationMenu.js';
-import { Menu, CheckCircle2, CreditCard, Store, Layers, Gift, User, Sparkles } from 'lucide-react';
+import { Menu, CheckCircle2, CreditCard, Store, Layers, Gift, User, Sparkles, Coins } from 'lucide-react';
 import { hapticSelection } from '../utils/telegram.js';
 
 interface TopNavProps {
@@ -37,6 +37,13 @@ export const TopNav: React.FC<TopNavProps> = ({
       isPrimary: true,
     },
     {
+      id: 'earn',
+      label: 'Заработок',
+      icon: <Coins className="w-3.5 h-3.5 text-amber-400" />,
+      isPrimary: true,
+      badge: '₽',
+    },
+    {
       id: 'avita',
       label: '«Авита»',
       icon: <Store className="w-3.5 h-3.5" />,
@@ -63,10 +70,10 @@ export const TopNav: React.FC<TopNavProps> = ({
 
   return (
     <header className="w-full flex flex-col border-b border-white/5 bg-[#08090C]/90 backdrop-blur-md sticky top-0 z-40 select-none">
-      {/* Top Bar: Profile & Balance */}
-      <div className="w-full flex items-center justify-between py-2.5 px-4 sm:px-6">
+      {/* Top Bar: Profile on Left, Centered Ruble Balance, Telegram Safe Spacer on Right */}
+      <div className="w-full flex items-center justify-between py-2 px-3 sm:px-6 relative">
         {/* Left: Menu & User Avatar with Level */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 z-10 shrink-0">
           <button
             onClick={() => {
               hapticSelection();
@@ -78,7 +85,7 @@ export const TopNav: React.FC<TopNavProps> = ({
             <Menu className="w-5 h-5" />
           </button>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <div className="relative">
               <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-neutral-800 to-neutral-700 border border-white/20 flex items-center justify-center font-bold text-xs text-white uppercase overflow-hidden shadow-sm">
                 {user?.photoUrl ? (
@@ -94,7 +101,7 @@ export const TopNav: React.FC<TopNavProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <span className="text-xs font-semibold text-white/90 truncate max-w-[100px] sm:max-w-[140px]">
+              <span className="text-xs font-semibold text-white/90 truncate max-w-[80px] sm:max-w-[120px]">
                 {user?.firstName || user?.username || 'VIP Игрок'}
               </span>
               <span className="text-[10px] text-white/40 font-mono">
@@ -104,13 +111,13 @@ export const TopNav: React.FC<TopNavProps> = ({
           </div>
         </div>
 
-        {/* Right: Ruble Balance & Tasks progress (matching screenshot 1 pure bold white text, with safe margin for Telegram native overlay buttons) */}
-        <div className="flex flex-col items-end justify-center pr-24 sm:pr-4">
-          <div className="flex items-baseline gap-1">
-            <span className="font-mono font-extrabold text-base sm:text-lg tracking-tight text-white drop-shadow-sm">
+        {/* Center: Prominent Minimal Ruble Balance & Quick Tasks (Centered across the bar) */}
+        <div className="flex-1 flex flex-col items-center justify-center px-1 text-center">
+          <div className="flex items-baseline gap-1 bg-[#131620]/90 border border-white/10 px-3.5 py-1 rounded-2xl shadow-inner backdrop-blur-sm">
+            <span className="font-mono font-black text-base sm:text-lg tracking-tight text-white drop-shadow-sm">
               {coins.toLocaleString('ru-RU')}
             </span>
-            <span className="text-sm font-bold text-white/90 font-mono">₽</span>
+            <span className="text-sm font-black text-amber-400 font-mono">₽</span>
           </div>
 
           {/* Compact tasks progress */}
@@ -125,10 +132,13 @@ export const TopNav: React.FC<TopNavProps> = ({
             <span>{tasksProgress}</span>
           </button>
         </div>
+
+        {/* Right: Reserved Safe Space for Telegram Native Header Buttons (⋮ and ✕) */}
+        <div className="w-10 sm:w-16 shrink-0 flex justify-end"></div>
       </div>
 
       {/* Bottom Row: Quick Navigation Bar with Highlighted Core Sections */}
-      <nav className="w-full flex items-center gap-1.5 px-4 sm:px-6 pt-1 pb-2.5 overflow-x-auto scrollbar-none">
+      <nav className="w-full flex items-center gap-1.5 px-3 sm:px-6 pt-1 pb-2.5 overflow-x-auto scrollbar-none">
         {quickTabs.map((tab) => {
           const isActive = currentScreen === tab.id;
           return (
@@ -142,6 +152,8 @@ export const TopNav: React.FC<TopNavProps> = ({
                 isActive
                   ? tab.id === 'mint'
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_12px_rgba(52,211,153,0.3)]'
+                    : tab.id === 'earn'
+                    ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50 shadow-[0_0_12px_rgba(234,179,8,0.3)]'
                     : tab.id === 'avita'
                     ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-[0_0_12px_rgba(251,191,36,0.3)]'
                     : tab.id === 'collection'
@@ -157,7 +169,9 @@ export const TopNav: React.FC<TopNavProps> = ({
               </span>
               <span>{tab.label}</span>
               {tab.badge && !isActive && (
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="px-1 py-0.2 rounded-full bg-amber-500/20 text-amber-400 text-[9px] font-mono font-bold">
+                  {tab.badge}
+                </span>
               )}
             </button>
           );

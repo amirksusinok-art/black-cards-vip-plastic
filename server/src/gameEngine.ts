@@ -110,6 +110,50 @@ export const BEGINNER_CATEGORIES: { name: CategoryName; weight: number }[] = [
   { name: 'Mirror', weight: 0.5 },
 ];
 
+export type CaseTier = 'standard' | 'go' | 'plus' | 'elite';
+
+export const CASE_TIERS: Record<CaseTier, { name: string; price: number; luckMultiplier: number }> = {
+  standard: { name: 'Стандарт', price: 500, luckMultiplier: 1.0 },
+  go: { name: 'Go', price: 1000, luckMultiplier: 1.5 },
+  plus: { name: 'Plus', price: 2000, luckMultiplier: 2.0 },
+  elite: { name: 'Элит', price: 5000, luckMultiplier: 3.0 },
+};
+
+/**
+ * Returns materials weighted according to case tier luck multiplier
+ */
+export function getMaterialsForTier(tier: CaseTier): { name: MaterialName; weight: number }[] {
+  const mult = CASE_TIERS[tier]?.luckMultiplier || 1.0;
+  if (mult === 1.0) return STANDARD_MATERIALS;
+
+  return [
+    { name: 'Classic Plastic', weight: Math.max(10, 45 - (mult - 1) * 15) },
+    { name: 'Matte Plastic', weight: Math.max(10, 25 - (mult - 1) * 8) },
+    { name: 'Gold', weight: Math.round(12 * mult) },
+    { name: 'Black Carbon', weight: Math.round(10 * mult) },
+    { name: 'Titanium', weight: Math.round(6 * mult) },
+    { name: 'Holographic', weight: Math.round(2 * mult) },
+  ];
+}
+
+/**
+ * Returns categories weighted according to case tier luck multiplier
+ */
+export function getCategoriesForTier(tier: CaseTier): { name: CategoryName; weight: number }[] {
+  const mult = CASE_TIERS[tier]?.luckMultiplier || 1.0;
+  if (mult === 1.0) return STANDARD_CATEGORIES;
+
+  return [
+    { name: 'Standard', weight: Math.max(20, 70 - (mult - 1) * 20) },
+    { name: 'Pair', weight: Math.round(16 * mult) },
+    { name: 'Triple', weight: Math.round(6 * mult) },
+    { name: 'Quad', weight: Math.round(2 * mult) },
+    { name: 'Repeater', weight: Math.round(3 * mult) },
+    { name: 'Straight', weight: Math.round(2 * mult) },
+    { name: 'Mirror', weight: Math.round(1 * mult) },
+  ];
+}
+
 /**
  * Cryptographically secure random float in [0, 1)
  */
@@ -304,19 +348,23 @@ export function calculateCollectorScore(material: MaterialName, category: Catego
 /**
  * Main Card Generator
  */
-export function generateCard(isFreeRoll = false, isBeginner = false): GeneratedCard {
+export function generateCard(
+  isFreeRoll = false,
+  isBeginner = false,
+  tier: CaseTier = 'standard'
+): GeneratedCard {
   const bank = pickWeighted(BANKS);
   const material = isFreeRoll
     ? pickWeighted(FREE_MATERIALS)
     : isBeginner
     ? pickWeighted(BEGINNER_MATERIALS)
-    : pickWeighted(STANDARD_MATERIALS);
+    : pickWeighted(getMaterialsForTier(tier));
 
   const category = isFreeRoll
     ? pickWeighted(FREE_CATEGORIES)
     : isBeginner
     ? pickWeighted(BEGINNER_CATEGORIES)
-    : pickWeighted(STANDARD_CATEGORIES);
+    : pickWeighted(getCategoriesForTier(tier));
 
   const cardNumber = generateCardNumberForCategory(category);
   const collectionCode = generateCollectionCode();

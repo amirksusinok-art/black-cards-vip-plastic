@@ -2,13 +2,23 @@ import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { AuthenticatedRequest } from './auth.js';
 import { query, withTransaction } from './db.js';
-import { generateCard, BankName, MaterialName, CategoryName } from './gameEngine.js';
+import { generateCard, BankName, MaterialName, CategoryName, CaseTier, CASE_TIERS } from './gameEngine.js';
 import {
   evaluateSingleCard,
   evaluateBatchCards,
   generateInitialGreeting,
   processBargainRound,
 } from './avitaEngine.js';
+import {
+  MAX_ENERGY,
+  MAX_LEVEL,
+  DAILY_HELP_AMOUNT,
+  DAILY_HELP_COOLDOWN_MS,
+  CLICKER_CONFIG,
+  CLICKER_TASKS,
+  calculateCurrentEnergy,
+  validateTapBatch,
+} from './clickerEngine.js';
 
 export const apiRouter = Router();
 
@@ -111,12 +121,15 @@ apiRouter.get('/me', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// POST /api/cards/issue — Regular Roll (Costs 500 Coins, Idempotent)
+// POST /api/cards/issue — Roll Card by Tier (standard: 500, go: 1000, plus: 2000, elite: 5000)
 apiRouter.post('/cards/issue', async (req: AuthenticatedRequest, res: Response) => {
-  const { requestId } = req.body;
+  const { requestId, tier = 'standard' } = req.body;
   if (!requestId) {
     return res.status(400).json({ success: false, error: 'Missing requestId' });
   }
+
+  const selectedTier = (tier in CASE_TIERS ? tier : 'standard') as CaseTier;
+  const caseCost = CASE_TIERS[selectedTier]?.price || 500;
 
   try {
     const user = await getOrCreateUser(req.telegramUser);
@@ -137,12 +150,12 @@ apiRouter.post('/cards/issue', async (req: AuthenticatedRequest, res: Response) 
       const uRes = await client.query('SELECT * FROM users WHERE id = $1', [user.id]);
       const freshUser = uRes.rows[0];
 
-      if (freshUser.coins < 500) {
-        throw new Error('Недостаточно средств: требуется 500 Coins');
+      if (freshUser.coins < caseCost) {
+        throw new Error(`Недостаточно средств: требуется ${caseCost} Coins`);
       }
 
       // Deduct coins
-      const newBalance = freshUser.coins - 500;
+      const newBalance = freshUser.coins - caseCost;
       await client.query('UPDATE users SET coins = $1, exp = exp + 10 WHERE id = $2', [
         newBalance,
         user.id,
@@ -155,8 +168,8 @@ apiRouter.post('/cards/issue', async (req: AuthenticatedRequest, res: Response) 
       const rollsCount = parseInt(countRes.rows[0]?.count || '0', 10);
       const isBeginner = rollsCount < 10;
 
-      // Generate card
-      const generated = generateCard(false, isBeginner);
+      // Generate card with case tier
+      const generated = generateCard(false, isBeginner, selectedTier);
       const cardUid = 'card_' + crypto.randomBytes(12).toString('hex');
 
       const cardInsert = await client.query(
@@ -312,16 +325,18 @@ apiRouter.post('/cards/free-issue', async (req: AuthenticatedRequest, res: Respo
 
 // POST /api/cards/auto-issue — Auto-Roll (up to 100 spins, accelerated, stops on insufficient funds)
 apiRouter.post('/cards/auto-issue', async (req: AuthenticatedRequest, res: Response) => {
-  const { count, requestId } = req.body;
+  const { count, requestId, tier = 'standard' } = req.body;
   const requestedSpins = Math.min(Math.max(parseInt(count || '1', 10), 1), 100);
+  const selectedTier = (tier in CASE_TIERS ? tier : 'standard') as CaseTier;
+  const caseCost = CASE_TIERS[selectedTier]?.price || 500;
 
   try {
     const user = await getOrCreateUser(req.telegramUser);
 
-    if (user.coins < 500) {
+    if (user.coins < caseCost) {
       return res.status(400).json({
         success: false,
-        error: 'Недостаточно средств',
+        error: `Недостаточно средств (нужно ${caseCost} Coins)`,
         stoppedReason: 'INSUFFICIENT_FUNDS',
         spinsCompleted: 0,
         cards: [],
@@ -342,15 +357,15 @@ apiRouter.post('/cards/auto-issue', async (req: AuthenticatedRequest, res: Respo
       const baseRollsCount = parseInt(countRes.rows[0]?.count || '0', 10);
 
       for (let i = 0; i < requestedSpins; i++) {
-        if (currentCoins < 500) {
+        if (currentCoins < caseCost) {
           break;
         }
 
-        currentCoins -= 500;
+        currentCoins -= caseCost;
         completedSpins++;
 
         const isBeginner = (baseRollsCount + completedSpins) <= 10;
-        const generated = generateCard(false, isBeginner);
+        const generated = generateCard(false, isBeginner, selectedTier);
         const cardUid = 'auto_' + crypto.randomBytes(12).toString('hex');
 
         const cardInsert = await client.query(
@@ -1283,6 +1298,287 @@ apiRouter.get('/avita/history', async (req: AuthenticatedRequest, res: Response)
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// CLICKER / EARN COINS API ENDPOINTS
+// ==========================================
+
+// GET /api/clicker/state — Get user clicker energy, upgrades and daily help status
+apiRouter.get('/clicker/state', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    const clickerRes = await query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+    const clicker = clickerRes.rows[0];
+
+    const powerLevel = clicker.power_level || 1;
+    const rechargeLevel = clicker.recharge_level || 1;
+    const storedEnergy = typeof clicker.current_energy === 'number' ? clicker.current_energy : 100;
+    const lastIso = clicker.last_energy_updated_at || new Date().toISOString();
+
+    const energyCalc = calculateCurrentEnergy(storedEnergy, lastIso, rechargeLevel);
+
+    // If energy recovered, update in database
+    if (energyCalc.currentEnergy !== storedEnergy) {
+      await query(
+        'UPDATE user_clicker SET current_energy = $1, last_energy_updated_at = $2 WHERE user_id = $3',
+        [energyCalc.currentEnergy, energyCalc.lastUpdatedIso, user.id]
+      );
+    }
+
+    // Daily help cooldown check
+    let canClaimDailyHelp = user.coins < 500;
+    let dailyHelpSecondsRemaining = 0;
+    if (clicker.last_daily_help_at) {
+      const elapsed = Date.now() - new Date(clicker.last_daily_help_at).getTime();
+      if (elapsed < DAILY_HELP_COOLDOWN_MS) {
+        canClaimDailyHelp = false;
+        dailyHelpSecondsRemaining = Math.ceil((DAILY_HELP_COOLDOWN_MS - elapsed) / 1000);
+      }
+    }
+
+    const nextPowerLevel = powerLevel < MAX_LEVEL ? powerLevel + 1 : null;
+    const nextPowerCost = nextPowerLevel ? CLICKER_CONFIG.powerUpgradeCosts[nextPowerLevel] : null;
+
+    const nextRechargeLevel = rechargeLevel < MAX_LEVEL ? rechargeLevel + 1 : null;
+    const nextRechargeCost = nextRechargeLevel ? CLICKER_CONFIG.rechargeUpgradeCosts[nextRechargeLevel] : null;
+    const secondsPerUnit = CLICKER_CONFIG.rechargeSecondsPerUnit[rechargeLevel] || 30;
+
+    res.json({
+      success: true,
+      coins: user.coins,
+      powerLevel,
+      coinsPerClick: powerLevel,
+      rechargeLevel,
+      secondsPerUnit,
+      currentEnergy: energyCalc.currentEnergy,
+      maxEnergy: MAX_ENERGY,
+      secondsUntilNextEnergy: energyCalc.secondsUntilNextEnergy,
+      nextPowerCost,
+      nextRechargeCost,
+      canClaimDailyHelp,
+      dailyHelpSecondsRemaining,
+      dailyHelpAmount: DAILY_HELP_AMOUNT,
+      totalClicks: clicker.total_clicks || 0,
+      tasks: CLICKER_TASKS.map((t) => ({
+        ...t,
+        completed: (clicker.total_clicks || 0) >= t.targetCount,
+      })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/clicker/tap — Process tap batch with anti-fraud energy validation
+apiRouter.post('/clicker/tap', async (req: AuthenticatedRequest, res: Response) => {
+  const { count = 1 } = req.body;
+  const requestedTaps = Math.min(Math.max(parseInt(count || '1', 10), 1), 50);
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    const result = await withTransaction(async (client) => {
+      const cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      const clicker = cRes.rows[0];
+
+      const powerLevel = clicker.power_level || 1;
+      const rechargeLevel = clicker.recharge_level || 1;
+      const storedEnergy = typeof clicker.current_energy === 'number' ? clicker.current_energy : 100;
+      const lastIso = clicker.last_energy_updated_at || new Date().toISOString();
+
+      // Recalculate up-to-date energy
+      const energyCalc = calculateCurrentEnergy(storedEnergy, lastIso, rechargeLevel);
+
+      // Validate tap batch against current energy
+      const tapResult = validateTapBatch({
+        tapsCount: requestedTaps,
+        powerLevel,
+        currentEnergy: energyCalc.currentEnergy,
+      });
+
+      if (tapResult.allowedTaps <= 0) {
+        return {
+          tapsProcessed: 0,
+          coinsEarned: 0,
+          currentEnergy: energyCalc.currentEnergy,
+          userCoins: user.coins,
+          message: 'Недостаточно энергии для тапа',
+        };
+      }
+
+      // Update energy and total clicks
+      const nowIso = new Date().toISOString();
+      await client.query(
+        `UPDATE user_clicker
+         SET current_energy = $1, last_energy_updated_at = $2, total_clicks = total_clicks + ${tapResult.allowedTaps}
+         WHERE user_id = $3`,
+        [tapResult.remainingEnergy, nowIso, user.id]
+      );
+
+      // Award Coins to user
+      const uRes = await client.query(
+        'UPDATE users SET coins = coins + $1, exp = exp + $2 WHERE id = $3 RETURNING coins',
+        [tapResult.coinsEarned, Math.ceil(tapResult.allowedTaps / 2), user.id]
+      );
+      const newCoins = uRes.rows[0].coins;
+
+      return {
+        tapsProcessed: tapResult.allowedTaps,
+        coinsEarned: tapResult.coinsEarned,
+        currentEnergy: tapResult.remainingEnergy,
+        userCoins: newCoins,
+      };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/clicker/upgrade-power — Upgrade click power (1 -> 5 levels)
+apiRouter.post('/clicker/upgrade-power', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    const result = await withTransaction(async (client) => {
+      const cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      const clicker = cRes.rows[0];
+      const currentPower = clicker.power_level || 1;
+
+      if (currentPower >= MAX_LEVEL) {
+        throw new Error('Достигнут максимальный уровень силы клика (5)');
+      }
+
+      const nextLevel = currentPower + 1;
+      const cost = CLICKER_CONFIG.powerUpgradeCosts[nextLevel];
+
+      const uRes = await client.query('SELECT coins FROM users WHERE id = $1', [user.id]);
+      const userCoins = uRes.rows[0].coins;
+
+      if (userCoins < cost) {
+        throw new Error(`Недостаточно Coins. Требуется ${cost} Coins`);
+      }
+
+      // Deduct coins & update power level
+      await client.query('UPDATE users SET coins = coins - $1 WHERE id = $2', [cost, user.id]);
+      await client.query('UPDATE user_clicker SET power_level = $1 WHERE user_id = $2', [
+        nextLevel,
+        user.id,
+      ]);
+
+      const updatedCoins = userCoins - cost;
+      const nextCost = nextLevel < MAX_LEVEL ? CLICKER_CONFIG.powerUpgradeCosts[nextLevel + 1] : null;
+
+      return {
+        newPowerLevel: nextLevel,
+        newCoins: updatedCoins,
+        nextPowerCost: nextCost,
+      };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/clicker/upgrade-energy — Upgrade energy recharge speed (1 -> 5 levels)
+apiRouter.post('/clicker/upgrade-energy', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    const result = await withTransaction(async (client) => {
+      const cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      const clicker = cRes.rows[0];
+      const currentRecharge = clicker.recharge_level || 1;
+
+      if (currentRecharge >= MAX_LEVEL) {
+        throw new Error('Достигнут максимальный уровень скорости восстановления (5)');
+      }
+
+      const nextLevel = currentRecharge + 1;
+      const cost = CLICKER_CONFIG.rechargeUpgradeCosts[nextLevel];
+
+      const uRes = await client.query('SELECT coins FROM users WHERE id = $1', [user.id]);
+      const userCoins = uRes.rows[0].coins;
+
+      if (userCoins < cost) {
+        throw new Error(`Недостаточно Coins. Требуется ${cost} Coins`);
+      }
+
+      // Deduct coins & update recharge level
+      await client.query('UPDATE users SET coins = coins - $1 WHERE id = $2', [cost, user.id]);
+      await client.query('UPDATE user_clicker SET recharge_level = $1 WHERE user_id = $2', [
+        nextLevel,
+        user.id,
+      ]);
+
+      const updatedCoins = userCoins - cost;
+      const nextCost = nextLevel < MAX_LEVEL ? CLICKER_CONFIG.rechargeUpgradeCosts[nextLevel + 1] : null;
+      const newSecondsPerUnit = CLICKER_CONFIG.rechargeSecondsPerUnit[nextLevel];
+
+      return {
+        newRechargeLevel: nextLevel,
+        newCoins: updatedCoins,
+        nextRechargeCost: nextCost,
+        secondsPerUnit: newSecondsPerUnit,
+      };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/clicker/claim-daily-help — Claim 300 Coins daily help if balance < 500 Coins
+apiRouter.post('/clicker/claim-daily-help', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    const result = await withTransaction(async (client) => {
+      const uRes = await client.query('SELECT coins FROM users WHERE id = $1', [user.id]);
+      const currentCoins = uRes.rows[0].coins;
+
+      if (currentCoins >= 500) {
+        throw new Error('Помощь доступна только при балансе менее 500 Coins');
+      }
+
+      const cRes = await client.query('SELECT * FROM user_clicker WHERE user_id = $1', [user.id]);
+      const clicker = cRes.rows[0];
+
+      if (clicker.last_daily_help_at) {
+        const elapsed = Date.now() - new Date(clicker.last_daily_help_at).getTime();
+        if (elapsed < DAILY_HELP_COOLDOWN_MS) {
+          const waitSec = Math.ceil((DAILY_HELP_COOLDOWN_MS - elapsed) / 1000);
+          throw new Error(`Ежедневная помощь уже получена. Доступна через ${waitSec} сек.`);
+        }
+      }
+
+      const nowIso = new Date().toISOString();
+      await client.query('UPDATE user_clicker SET last_daily_help_at = $1 WHERE user_id = $2', [
+        nowIso,
+        user.id,
+      ]);
+
+      const updateRes = await client.query(
+        'UPDATE users SET coins = coins + $1 WHERE id = $2 RETURNING coins',
+        [DAILY_HELP_AMOUNT, user.id]
+      );
+
+      return {
+        coinsAdded: DAILY_HELP_AMOUNT,
+        newCoins: updateRes.rows[0].coins,
+      };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 

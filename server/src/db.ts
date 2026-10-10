@@ -75,7 +75,8 @@ function loadMockData(): MockDB {
     user_favorites: [],
     user_settings: [],
     avita_sessions: [],
-    avita_deals: []
+    avita_deals: [],
+    user_clicker: []
   };
 }
 
@@ -517,6 +518,79 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
     const userId = params[0];
     const deals = mockDB.avita_deals.filter(d => Number(d.user_id) === Number(userId));
     return { rows: deals, rowCount: deals.length };
+  }
+
+  // 13. User Clicker Queries
+  if (sql.includes('FROM user_clicker WHERE user_id =')) {
+    const userId = params[0];
+    let c = mockDB.user_clicker.find(item => Number(item.user_id) === Number(userId));
+    if (!c) {
+      c = {
+        id: mockDB.user_clicker.length + 1,
+        user_id: Number(userId),
+        power_level: 1,
+        recharge_level: 1,
+        current_energy: 100,
+        last_energy_updated_at: new Date().toISOString(),
+        last_daily_help_at: null,
+        total_clicks: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      mockDB.user_clicker.push(c);
+      saveMockData();
+    }
+    return { rows: [c], rowCount: 1 };
+  }
+
+  if (sql.includes('INSERT INTO user_clicker')) {
+    const userId = params[0];
+    let c = mockDB.user_clicker.find(item => Number(item.user_id) === Number(userId));
+    if (!c) {
+      c = {
+        id: mockDB.user_clicker.length + 1,
+        user_id: Number(userId),
+        power_level: 1,
+        recharge_level: 1,
+        current_energy: 100,
+        last_energy_updated_at: new Date().toISOString(),
+        last_daily_help_at: null,
+        total_clicks: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      mockDB.user_clicker.push(c);
+      saveMockData();
+    }
+    return { rows: [c], rowCount: 1 };
+  }
+
+  if (sql.includes('UPDATE user_clicker SET')) {
+    const userId = params[params.length - 1];
+    let c = mockDB.user_clicker.find(item => Number(item.user_id) === Number(userId) || Number(item.id) === Number(userId));
+    if (c) {
+      if (sql.includes('power_level = $1')) {
+        c.power_level = Number(params[0]);
+      } else if (sql.includes('recharge_level = $1')) {
+        c.recharge_level = Number(params[0]);
+      } else if (sql.includes('current_energy = $1')) {
+        c.current_energy = Number(params[0]);
+        if (params.length >= 3 && sql.includes('last_energy_updated_at = $2')) {
+          c.last_energy_updated_at = params[1];
+        }
+        if (sql.includes('total_clicks = total_clicks +')) {
+          const match = sql.match(/total_clicks \+ (\d+)/);
+          const add = match ? parseInt(match[1], 10) : 1;
+          c.total_clicks = (c.total_clicks || 0) + add;
+        }
+      } else if (sql.includes('last_daily_help_at = $1')) {
+        c.last_daily_help_at = params[0];
+      }
+      c.updated_at = new Date().toISOString();
+      saveMockData();
+      return { rows: [c], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
   }
 
   // Fallback generic empty
