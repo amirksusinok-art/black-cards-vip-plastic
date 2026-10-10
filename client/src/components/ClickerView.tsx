@@ -191,62 +191,103 @@ export const ClickerView: React.FC<ClickerViewProps> = ({ user, onRefreshUser })
     setIsCoinPressed(false);
   };
 
-  // Handle Power Upgrade
-  const handleUpgradePower = async () => {
+  // Handle Power Upgrade with Instant Optimistic UI (0ms delay)
+  const handleUpgradePower = () => {
     if (!clickerState || !clickerState.nextPowerCost) return;
-    if ((user?.coins ?? 0) < clickerState.nextPowerCost) {
-      setErrorMessage(`Недостаточно монет! Нужно ${clickerState.nextPowerCost.toLocaleString('ru-RU')} ₽`);
+    const cost = clickerState.nextPowerCost;
+    if ((user?.coins ?? 0) < cost) {
+      setErrorMessage(`Недостаточно монет! Нужно ${cost.toLocaleString('ru-RU')} ₽`);
       hapticNotification('error');
       return;
     }
 
-    try {
-      hapticSelection();
-      const res = await api.upgradeClickerPower();
-      hapticNotification('success');
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.6 },
-        colors: ['#F59E0B', '#FBBF24', '#FDE68A'],
+    hapticSelection();
+    hapticNotification('success');
+
+    const nextPowerLevel = Math.min(5, clickerState.powerLevel + 1);
+    const newCoinsPerTap = nextPowerLevel;
+    const nextCost = nextPowerLevel < 5 ? (nextPowerLevel === 2 ? 500 : nextPowerLevel === 3 ? 1000 : nextPowerLevel === 4 ? 2500 : 5000) : null;
+
+    // Optimistic UI state
+    setClickerState((prev) =>
+      prev
+        ? {
+            ...prev,
+            coins: Math.max(0, prev.coins - cost),
+            powerLevel: nextPowerLevel,
+            powerCoinsPerTap: newCoinsPerTap,
+            nextPowerCost: nextCost,
+          }
+        : null
+    );
+
+    confetti({
+      particleCount: 50,
+      spread: 60,
+      origin: { y: 0.6 },
+      colors: ['#F59E0B', '#FBBF24', '#FDE68A'],
+    });
+    setSuccessMessage(`Сила клика: +${newCoinsPerTap} ₽ за клик!`);
+    setTimeout(() => setSuccessMessage(null), 2500);
+
+    // Sync in background without blocking UI
+    api.upgradeClickerPower()
+      .then(() => onRefreshUser())
+      .catch((err) => {
+        setErrorMessage(err.message || 'Ошибка улучшения силы клика');
+        fetchState();
+        onRefreshUser();
       });
-      setSuccessMessage(`Сила клика повышена до ${res.coinsPerTap} ₽ за клик!`);
-      setTimeout(() => setSuccessMessage(null), 3000);
-      fetchState();
-      onRefreshUser();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Ошибка улучшения силы клика');
-      hapticNotification('error');
-    }
   };
 
-  // Handle Energy Upgrade
-  const handleUpgradeEnergy = async () => {
+  // Handle Energy Upgrade with Instant Optimistic UI (0ms delay)
+  const handleUpgradeEnergy = () => {
     if (!clickerState || !clickerState.nextEnergyCost) return;
-    if ((user?.coins ?? 0) < clickerState.nextEnergyCost) {
-      setErrorMessage(`Недостаточно монет! Нужно ${clickerState.nextEnergyCost.toLocaleString('ru-RU')} ₽`);
+    const cost = clickerState.nextEnergyCost;
+    if ((user?.coins ?? 0) < cost) {
+      setErrorMessage(`Недостаточно монет! Нужно ${cost.toLocaleString('ru-RU')} ₽`);
       hapticNotification('error');
       return;
     }
 
-    try {
-      hapticSelection();
-      const res = await api.upgradeClickerEnergy();
-      hapticNotification('success');
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.6 },
-        colors: ['#10B981', '#34D399', '#6EE7B7'],
+    hapticSelection();
+    hapticNotification('success');
+
+    const nextEnergyLevel = Math.min(5, clickerState.energyLevel + 1);
+    const rechargeSecs = [0, 30, 24, 18, 12, 6];
+    const newSecondsPerEnergy = rechargeSecs[nextEnergyLevel] || 6;
+    const nextCost = nextEnergyLevel < 5 ? (nextEnergyLevel === 2 ? 600 : nextEnergyLevel === 3 ? 1200 : nextEnergyLevel === 4 ? 3000 : 6000) : null;
+
+    // Optimistic UI state
+    setClickerState((prev) =>
+      prev
+        ? {
+            ...prev,
+            coins: Math.max(0, prev.coins - cost),
+            energyLevel: nextEnergyLevel,
+            energyPerSec: newSecondsPerEnergy,
+            nextEnergyCost: nextCost,
+          }
+        : null
+    );
+
+    confetti({
+      particleCount: 50,
+      spread: 60,
+      origin: { y: 0.6 },
+      colors: ['#10B981', '#34D399', '#6EE7B7'],
+    });
+    setSuccessMessage(`Скорость восстановления: 1 за ${newSecondsPerEnergy} сек.!`);
+    setTimeout(() => setSuccessMessage(null), 2500);
+
+    // Sync in background without blocking UI
+    api.upgradeClickerEnergy()
+      .then(() => onRefreshUser())
+      .catch((err) => {
+        setErrorMessage(err.message || 'Ошибка улучшения восстановления');
+        fetchState();
+        onRefreshUser();
       });
-      setSuccessMessage(`Скорость восстановления энергии повышена: 1 энергия за ${res.secondsPerEnergy} сек.!`);
-      setTimeout(() => setSuccessMessage(null), 3000);
-      fetchState();
-      onRefreshUser();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Ошибка улучшения восстановления');
-      hapticNotification('error');
-    }
   };
 
   // Handle Daily Help Claim (+300 Coins)
@@ -405,25 +446,15 @@ export const ClickerView: React.FC<ClickerViewProps> = ({ user, onRefreshUser })
             {/* Realistic Light Sweep Highlight */}
             <div className="absolute -top-1/2 -left-1/2 w-[200%] h-[200%] bg-gradient-to-b from-white/25 via-transparent to-black/30 pointer-events-none transform -rotate-45" />
 
-            {/* Circular Engraving Text on Rim */}
-            <div className="absolute inset-3 rounded-full border border-white/20 flex items-center justify-center pointer-events-none">
-              <span className="absolute top-2 text-[8px] font-mono uppercase tracking-[0.2em] text-black/50 font-black">
-                РОССИЙСКАЯ ФЕДЕРАЦИЯ • CARDDROP
-              </span>
-              <span className="absolute bottom-2 text-[8px] font-mono uppercase tracking-[0.2em] text-black/50 font-black">
-                ★ 2026 ★ VIP PLASTIC ★
-              </span>
-            </div>
+            {/* Clean Minimalist Inner Rim */}
+            <div className="absolute inset-2 sm:inset-3 rounded-full border border-white/25 pointer-events-none" />
 
-            {/* Large 3D Ruble Symbol ₽ */}
-            <div className="relative z-10 flex flex-col items-center justify-center">
+            {/* Pure 3D Ruble Symbol ₽ (Без лишних надписей) */}
+            <div className="relative z-10 flex items-center justify-center">
               <span
-                className={`font-mono font-black text-7xl sm:text-8xl leading-none select-none tracking-tighter ${coinVisual.symbolGrad}`}
+                className={`font-mono font-black text-8xl sm:text-9xl leading-none select-none tracking-tight ${coinVisual.symbolGrad} drop-shadow-[0_4px_16px_rgba(0,0,0,0.45)]`}
               >
                 ₽
-              </span>
-              <span className="text-[10px] font-mono uppercase font-black tracking-widest text-black/60 mt-1">
-                РУБЛЬ
               </span>
             </div>
           </div>

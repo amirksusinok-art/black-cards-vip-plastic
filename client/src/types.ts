@@ -174,3 +174,78 @@ export interface ClickerState {
   tasks: ClickerTaskStatus[];
 }
 
+export type LeaderboardCategory = 'coins' | 'cards' | 'best_card';
+
+export interface LeaderboardEntry {
+  rank: number;
+  userId: number;
+  telegramId: number;
+  username: string;
+  firstName: string;
+  photoUrl?: string | null;
+  score: number;
+  formattedScore: string;
+  trend: 'up' | 'down' | 'same' | 'new';
+  changeValue?: number;
+  cardMeta?: {
+    id: number;
+    serialId?: string;
+    bank: string;
+    material: string;
+    numberPattern?: string;
+    cardNumber: string;
+    estimatedValue: number;
+  };
+}
+
+export interface LeaderboardMyPosition {
+  rank: number;
+  score: number;
+  formattedScore: string;
+  trend: 'up' | 'down' | 'same' | 'new';
+  changeValue?: number;
+  diffToNext?: number | null;
+  nextScore?: number | null;
+  nextCardMeta?: any;
+  cardMeta?: any;
+}
+
+export interface GameSettings {
+  soundEnabled: boolean;
+  hapticsEnabled: boolean;
+  animationsEnabled: boolean;
+  notificationsEnabled: boolean;
+  compactMode: boolean;
+  onboardingCompleted: boolean;
+}
+
+export interface AdminUserItem {
+  id: number;
+  telegramId: number;
+  username: string;
+  firstName: string;
+  coins: number;
+  level: number;
+  cardsCount: number;
+  totalClicks: number;
+  createdAt: string;
+}
+
+export interface AdminAuditLog {
+  id: number;
+  admin_telegram_id: number;
+  action: string;
+  target_user_id: number | null;
+  reason: string;
+  details: any;
+  created_at: string;
+}
+
+export interface AdminStats {
+  totalUsers: number;
+  totalCards: number;
+  totalCoins: number;
+  totalClicks: number;
+}
+
+

@@ -15,6 +15,10 @@ import { NavigationMenu, NavScreen } from './components/NavigationMenu.js';
 import { CardDetailModal } from './components/CardDetailModal.js';
 import { RulesModal } from './components/RulesModal.js';
 import { PrivacyModal } from './components/PrivacyModal.js';
+import { LeaderboardView } from './components/LeaderboardView.js';
+import { SettingsModal } from './components/SettingsModal.js';
+import { AdminModal } from './components/AdminModal.js';
+import { OnboardingGuide } from './components/OnboardingGuide.js';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -23,6 +27,10 @@ export const App: React.FC = () => {
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [showOnboardingGuide, setShowOnboardingGuide] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const loadUserData = useCallback(async () => {
@@ -39,6 +47,23 @@ export const App: React.FC = () => {
   useEffect(() => {
     initTelegramApp();
     loadUserData();
+
+    // Check Onboarding
+    const localOnboard = localStorage.getItem('carddrop_onboarding_completed');
+    if (!localOnboard) {
+      api.getSettings().then((res) => {
+        if (!res.settings?.onboardingCompleted) {
+          setShowOnboardingGuide(true);
+        }
+      }).catch(() => {
+        setShowOnboardingGuide(true);
+      });
+    }
+
+    // Check Admin
+    api.verifyAdmin().then((res) => {
+      setIsAdmin(res.isAdmin);
+    }).catch(() => {});
   }, [loadUserData]);
 
   // Handle Telegram BackButton
@@ -92,13 +117,14 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#08090C] text-[#F3F4F6]">
-      {/* Top Header with Quick Navigation */}
+      {/* Top Header with Clean Minimal Layout */}
       <TopNav
         user={user}
         currentScreen={currentScreen}
         onSelectScreen={(screen) => setCurrentScreen(screen)}
         onOpenMenu={() => setMenuOpen(true)}
         onOpenTasks={() => setCurrentScreen('tasks')}
+        onOpenSettings={() => setShowSettingsModal(true)}
       />
 
       {/* Main Content Area */}
@@ -134,6 +160,12 @@ export const App: React.FC = () => {
           />
         )}
 
+        {currentScreen === 'leaderboard' && (
+          <LeaderboardView
+            onOpenCardDetails={(card) => setSelectedCard(card)}
+          />
+        )}
+
         {currentScreen === 'albums' && <AlbumsView />}
 
         {currentScreen === 'tasks' && <TasksView onRewardClaimed={loadUserData} />}
@@ -156,6 +188,9 @@ export const App: React.FC = () => {
           onClose={() => setMenuOpen(false)}
           onOpenRules={() => setShowRulesModal(true)}
           onOpenPrivacy={() => setShowPrivacyModal(true)}
+          onOpenSettings={() => setShowSettingsModal(true)}
+          onOpenAdmin={() => setShowAdminModal(true)}
+          isAdmin={isAdmin}
         />
       )}
 
@@ -174,6 +209,29 @@ export const App: React.FC = () => {
 
       {/* Privacy Policy Modal */}
       {showPrivacyModal && <PrivacyModal onClose={() => setShowPrivacyModal(false)} />}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        onRestartOnboarding={() => setShowOnboardingGuide(true)}
+        onOpenAdmin={() => setShowAdminModal(true)}
+      />
+
+      {/* Admin Panel Modal */}
+      <AdminModal
+        isOpen={showAdminModal}
+        onClose={() => setShowAdminModal(false)}
+        onRefreshGlobalUser={loadUserData}
+      />
+
+      {/* Onboarding Guide */}
+      <OnboardingGuide
+        isOpen={showOnboardingGuide}
+        onClose={() => setShowOnboardingGuide(false)}
+        onNavigateToScreen={(screen) => setCurrentScreen(screen)}
+      />
     </div>
   );
 };
+

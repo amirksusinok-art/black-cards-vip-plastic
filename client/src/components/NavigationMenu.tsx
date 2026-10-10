@@ -14,6 +14,9 @@ import {
   ChevronRight,
   Flame,
   Coins,
+  Trophy,
+  Settings,
+  ShieldCheck,
 } from 'lucide-react';
 import { hapticSelection } from '../utils/telegram.js';
 
@@ -22,6 +25,7 @@ export type NavScreen =
   | 'collection'
   | 'avita'
   | 'earn'
+  | 'leaderboard'
   | 'albums'
   | 'tasks'
   | 'shop'
@@ -33,6 +37,9 @@ interface NavigationMenuProps {
   onClose: () => void;
   onOpenRules: () => void;
   onOpenPrivacy: () => void;
+  onOpenSettings?: () => void;
+  onOpenAdmin?: () => void;
+  isAdmin?: boolean;
 }
 
 export const NavigationMenu: React.FC<NavigationMenuProps> = ({
@@ -41,6 +48,9 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({
   onClose,
   onOpenRules,
   onOpenPrivacy,
+  onOpenSettings,
+  onOpenAdmin,
+  isAdmin,
 }) => {
   // Primary Core Sections (Featured at the top)
   const primaryItems: {
@@ -92,6 +102,16 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({
       glowBorder: 'border-cyan-500/40 hover:border-cyan-400 shadow-cyan-950/30',
       bgGradient: 'from-cyan-950/40 via-[#121622] to-[#10121A]',
       accentText: 'text-cyan-400',
+    },
+    {
+      id: 'leaderboard',
+      title: 'Лидерборд игроков',
+      subtitle: 'Топ-3 подиум • Coins, Карты и Редкость',
+      badge: 'ТОП 100',
+      icon: <Trophy className="w-5 h-5 text-amber-400" />,
+      glowBorder: 'border-amber-500/40 hover:border-amber-400 shadow-amber-950/30',
+      bgGradient: 'from-amber-950/40 via-[#191522] to-[#10121A]',
+      accentText: 'text-amber-400',
     },
   ];
 
@@ -243,6 +263,43 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({
               );
             })}
           </div>
+        </div>
+
+        {/* Settings & Admin Quick Actions */}
+        <div className="flex flex-col gap-1.5 pt-2 border-t border-white/10 font-mono">
+          {onOpenSettings && (
+            <button
+              onClick={() => {
+                hapticSelection();
+                onClose();
+                onOpenSettings();
+              }}
+              className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <Settings className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-semibold">Настройки игры</span>
+              </div>
+              <span className="text-[10px] text-white/40">Звук, вибро, 60 FPS</span>
+            </button>
+          )}
+
+          {isAdmin && onOpenAdmin && (
+            <button
+              onClick={() => {
+                hapticSelection();
+                onClose();
+                onOpenAdmin();
+              }}
+              className="w-full flex items-center justify-between p-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <ShieldCheck className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold">Панель администратора</span>
+              </div>
+              <span className="px-1.5 py-0.2 rounded bg-amber-500/30 text-[9px] font-bold">ROOT</span>
+            </button>
+          )}
         </div>
 
         {/* Legal & Info Links */}

@@ -12,8 +12,16 @@ export interface DBClient {
 let pool: pg.Pool | null = null;
 let isMockMode = false;
 
+export function getIsMockMode(): boolean {
+  return isMockMode || !pool;
+}
+
+export function getMockDB(): MockDB {
+  return mockDB;
+}
+
 // Mock Store for dev / testing when PostgreSQL server is not locally running
-interface MockDB {
+export interface MockDB {
   users: any[];
   cards: any[];
   card_templates: any[];
@@ -32,6 +40,8 @@ interface MockDB {
   avita_sessions: any[];
   avita_deals: any[];
   user_clicker: any[];
+  admin_audit_log: any[];
+  leaderboard_history: any[];
 }
 
 const mockDbPath = path.resolve(process.cwd(), 'data_local_store.json');
@@ -69,7 +79,9 @@ function loadMockData(): MockDB {
     user_settings: [],
     avita_sessions: [],
     avita_deals: [],
-    user_clicker: []
+    user_clicker: [],
+    admin_audit_log: [],
+    leaderboard_history: []
   };
 
   try {
@@ -80,7 +92,9 @@ function loadMockData(): MockDB {
         ...parsed,
         user_clicker: Array.isArray(parsed.user_clicker) ? parsed.user_clicker : [],
         avita_sessions: Array.isArray(parsed.avita_sessions) ? parsed.avita_sessions : [],
-        avita_deals: Array.isArray(parsed.avita_deals) ? parsed.avita_deals : []
+        avita_deals: Array.isArray(parsed.avita_deals) ? parsed.avita_deals : [],
+        admin_audit_log: Array.isArray(parsed.admin_audit_log) ? parsed.admin_audit_log : [],
+        leaderboard_history: Array.isArray(parsed.leaderboard_history) ? parsed.leaderboard_history : []
       };
     }
   } catch (err) {
@@ -185,6 +199,9 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
   if (!mockDB.user_clicker) mockDB.user_clicker = [];
   if (!mockDB.avita_sessions) mockDB.avita_sessions = [];
   if (!mockDB.avita_deals) mockDB.avita_deals = [];
+  if (!mockDB.user_settings) mockDB.user_settings = [];
+  if (!mockDB.admin_audit_log) mockDB.admin_audit_log = [];
+  if (!mockDB.leaderboard_history) mockDB.leaderboard_history = [];
 
   const trimmed = sql.trim().toUpperCase();
 
@@ -204,6 +221,10 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
     const id = params[0];
     const user = mockDB.users.find(u => Number(u.id) === Number(id));
     return { rows: user ? [user] : [], rowCount: user ? 1 : 0 };
+  }
+
+  if (sql.includes('FROM users') && !sql.includes('WHERE')) {
+    return { rows: mockDB.users.slice(0, 100), rowCount: mockDB.users.length };
   }
 
   if (sql.includes('INSERT INTO users')) {
@@ -605,6 +626,99 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
       return { rows: [c], rowCount: 1 };
     }
     return { rows: [], rowCount: 0 };
+  }
+
+  // 14. User Settings Queries
+  if (sql.includes('FROM user_settings WHERE user_id =')) {
+    const userId = params[0];
+    let s = mockDB.user_settings.find(item => Number(item.user_id) === Number(userId));
+    if (!s) {
+      s = {
+        user_id: Number(userId),
+        sound_enabled: true,
+        haptics_enabled: true,
+        animations_enabled: true,
+        notifications_enabled: true,
+        compact_mode: false,
+        onboarding_completed: false,
+        updated_at: new Date().toISOString()
+      };
+      mockDB.user_settings.push(s);
+      saveMockData();
+    }
+    return { rows: [s], rowCount: 1 };
+  }
+
+  if (sql.includes('INSERT INTO user_settings') || sql.includes('UPDATE user_settings')) {
+    const userId = Number(params[0]);
+    let s = mockDB.user_settings.find(item => Number(item.user_id) === userId);
+    if (!s) {
+      s = {
+        user_id: userId,
+        sound_enabled: params[1] ?? true,
+        haptics_enabled: params[2] ?? true,
+        animations_enabled: params[3] ?? true,
+        notifications_enabled: params[4] ?? true,
+        compact_mode: params[5] ?? false,
+        onboarding_completed: params[6] ?? false,
+        updated_at: new Date().toISOString()
+      };
+      mockDB.user_settings.push(s);
+    } else {
+      if (params.length >= 6) {
+        s.sound_enabled = params[1] ?? s.sound_enabled;
+        s.haptics_enabled = params[2] ?? s.haptics_enabled;
+        s.animations_enabled = params[3] ?? s.animations_enabled;
+        s.notifications_enabled = params[4] ?? s.notifications_enabled;
+        s.compact_mode = params[5] ?? s.compact_mode;
+        if (params[6] !== undefined) s.onboarding_completed = params[6];
+      }
+      s.updated_at = new Date().toISOString();
+    }
+    saveMockData();
+    return { rows: [s], rowCount: 1 };
+  }
+
+  // 15. Admin Audit Log Queries
+  if (sql.includes('INSERT INTO admin_audit_log')) {
+    const [adminTgId, action, targetUserId, reason, details] = params;
+    const logEntry = {
+      id: mockDB.admin_audit_log.length + 1,
+      admin_telegram_id: Number(adminTgId),
+      action: String(action),
+      target_user_id: targetUserId ? Number(targetUserId) : null,
+      reason: reason || '',
+      details: typeof details === 'string' ? JSON.parse(details) : details || {},
+      created_at: new Date().toISOString()
+    };
+    mockDB.admin_audit_log.unshift(logEntry);
+    saveMockData();
+    return { rows: [logEntry], rowCount: 1 };
+  }
+
+  if (sql.includes('FROM admin_audit_log')) {
+    return { rows: mockDB.admin_audit_log.slice(0, 50), rowCount: mockDB.admin_audit_log.length };
+  }
+
+  // 16. Leaderboard History Queries
+  if (sql.includes('FROM leaderboard_history WHERE user_id =') && sql.includes('category =')) {
+    const [userId, cat] = params;
+    const h = mockDB.leaderboard_history.find(item => Number(item.user_id) === Number(userId) && item.category === cat);
+    return { rows: h ? [h] : [], rowCount: h ? 1 : 0 };
+  }
+
+  if (sql.includes('INSERT INTO leaderboard_history') || sql.includes('UPDATE leaderboard_history')) {
+    const [userId, cat, pos] = params;
+    let h = mockDB.leaderboard_history.find(item => Number(item.user_id) === Number(userId) && item.category === cat);
+    if (!h) {
+      h = { user_id: Number(userId), category: cat, last_position: Number(pos), updated_at: new Date().toISOString() };
+      mockDB.leaderboard_history.push(h);
+    } else {
+      h.last_position = Number(pos);
+      h.updated_at = new Date().toISOString();
+    }
+    saveMockData();
+    return { rows: [h], rowCount: 1 };
   }
 
   // Fallback generic empty

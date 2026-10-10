@@ -107,3 +107,39 @@ export function authMiddleware(req: AuthenticatedRequest, res: Response, next: N
     error: 'Unauthorized: Invalid Telegram credentials',
   });
 }
+
+export const ADMIN_SECRET_PASSWORD = 'Трайфл67Кайфл42';
+
+export function isUserAdmin(telegramUser?: TelegramUser, passwordHeader?: string): boolean {
+  if (passwordHeader) {
+    let decoded = passwordHeader;
+    try {
+      decoded = decodeURIComponent(passwordHeader);
+    } catch {
+      // ignore
+    }
+    if (passwordHeader === ADMIN_SECRET_PASSWORD || decoded === ADMIN_SECRET_PASSWORD) {
+      return true;
+    }
+  }
+  if (!telegramUser) return false;
+  const adminIdsStr = process.env.ADMIN_TELEGRAM_IDS || '';
+  const adminIds = adminIdsStr
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(Number);
+  return adminIds.includes(telegramUser.id);
+}
+
+export function adminMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const secretHeader = (req.headers['x-admin-password'] as string) || (req.query.adminPassword as string);
+  if (isUserAdmin(req.telegramUser, secretHeader)) {
+    return next();
+  }
+  return res.status(403).json({
+    success: false,
+    error: 'Доступ запрещён: требуются права администратора',
+  });
+}
+

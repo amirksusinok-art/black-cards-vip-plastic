@@ -12,9 +12,33 @@ import {
   AvitaStatus,
   CaseTier,
   ClickerState,
+  LeaderboardCategory,
+  LeaderboardEntry,
+  LeaderboardMyPosition,
+  GameSettings,
+  AdminUserItem,
+  AdminAuditLog,
+  AdminStats,
 } from '../types.js';
 
 const API_BASE = '/api';
+
+let savedAdminPassword = typeof window !== 'undefined' ? localStorage.getItem('carddrop_admin_password') || '' : '';
+
+export function setSavedAdminPassword(pw: string) {
+  savedAdminPassword = pw;
+  if (typeof window !== 'undefined') {
+    if (pw) {
+      localStorage.setItem('carddrop_admin_password', pw);
+    } else {
+      localStorage.removeItem('carddrop_admin_password');
+    }
+  }
+}
+
+export function getSavedAdminPassword(): string {
+  return savedAdminPassword;
+}
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers || {});
@@ -23,6 +47,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const initData = getTelegramInitData();
   if (initData) {
     headers.set('x-telegram-init-data', initData);
+  }
+
+  if (savedAdminPassword) {
+    headers.set('x-admin-password', encodeURIComponent(savedAdminPassword));
   }
 
   const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -228,4 +256,65 @@ export const api = {
       addedCoins: number;
       totalCoins: number;
     }>('/clicker/claim-daily-help', { method: 'POST' }),
+
+  getLeaderboard: (category: LeaderboardCategory = 'coins') =>
+    request<{
+      success: boolean;
+      category: LeaderboardCategory;
+      top: LeaderboardEntry[];
+      myPosition: LeaderboardMyPosition;
+    }>(`/leaderboard?category=${category}`),
+
+  getSettings: () =>
+    request<{
+      success: boolean;
+      settings: GameSettings;
+    }>('/settings'),
+
+  updateSettings: (settings: Partial<GameSettings>) =>
+    request<{
+      success: boolean;
+      settings: GameSettings;
+    }>('/settings', {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    }),
+
+  verifyAdmin: (password?: string) =>
+    request<{
+      success: boolean;
+      isAdmin: boolean;
+    }>('/admin/verify', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
+
+  getAdminUsers: (query: string = '') =>
+    request<{
+      success: boolean;
+      users: AdminUserItem[];
+    }>(`/admin/users?query=${encodeURIComponent(query)}`),
+
+  adminAdjustBalance: (targetUserId: number, amount: number, reason: string) =>
+    request<{
+      success: boolean;
+      prevCoins: number;
+      newCoins: number;
+    }>('/admin/adjust-balance', {
+      method: 'POST',
+      body: JSON.stringify({ targetUserId, amount, reason }),
+    }),
+
+  getAdminAuditLogs: () =>
+    request<{
+      success: boolean;
+      logs: AdminAuditLog[];
+    }>('/admin/audit-logs'),
+
+  getAdminStats: () =>
+    request<{
+      success: boolean;
+      stats: AdminStats;
+    }>('/admin/stats'),
 };
+

@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
-import { AuthenticatedRequest } from './auth.js';
-import { query, withTransaction } from './db.js';
+import { AuthenticatedRequest, isUserAdmin, adminMiddleware, ADMIN_SECRET_PASSWORD } from './auth.js';
+import { query, withTransaction, getIsMockMode, getMockDB } from './db.js';
 import { generateCard, BankName, MaterialName, CategoryName, CaseTier, CASE_TIERS } from './gameEngine.js';
 import {
   evaluateSingleCard,
@@ -850,38 +850,6 @@ apiRouter.get('/albums', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// GET /api/leaderboard — Friends & Global VIP Collectors
-apiRouter.get('/leaderboard', async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const topUsers = await query(
-      `SELECT u.id, u.username, u.first_name, u.photo_url, u.level,
-              COUNT(c.id) as total_cards,
-              COALESCE(SUM(c.collector_score), 0) as total_score
-       FROM users u
-       LEFT JOIN cards c ON c.user_id = u.id AND (c.is_sold IS NULL OR c.is_sold = false)
-       GROUP BY u.id
-       ORDER BY total_score DESC, total_cards DESC
-       LIMIT 20`
-    );
-
-    res.json({
-      success: true,
-      leaderboard: topUsers.rows.map((r: any, idx: number) => ({
-        rank: idx + 1,
-        id: r.id,
-        name: r.first_name || r.username || 'Аноним',
-        username: r.username,
-        photoUrl: r.photo_url,
-        level: r.level,
-        cardsCount: parseInt(r.total_cards, 10),
-        score: parseInt(r.total_score, 10),
-      })),
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
 // ==========================================
 // AVITA MERCHANT ROUTES
 // ==========================================
@@ -1666,4 +1634,535 @@ apiRouter.post('/clicker/claim-daily-help', async (req: AuthenticatedRequest, re
     res.status(400).json({ success: false, error: err.message });
   }
 });
+
+// Helper for Card Rarity Scoring (Leaderboard)
+function getCardRarityWeight(material: string, pattern: string): number {
+  let matScore = 1000;
+  if (material === 'Platinum') matScore = 4000;
+  else if (material === 'Gold') matScore = 3000;
+  else if (material === 'Silver') matScore = 2000;
+  else if (material === 'Bronze') matScore = 1200;
+
+  let patScore = 50;
+  const p = (pattern || '').toLowerCase();
+  if (p.includes('777') || p.includes('jackpot')) patScore = 800;
+  else if (p.includes('mirror') || p.includes('radar')) patScore = 500;
+  else if (p.includes('quad')) patScore = 300;
+  else if (p.includes('triple')) patScore = 150;
+
+  return matScore + patScore;
+}
+
+// GET /api/leaderboard — Leaderboard rankings for Coins, Cards count, and Best Card
+apiRouter.get('/leaderboard', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const category = (req.query.category as string) || 'coins'; // 'coins' | 'cards' | 'best_card'
+
+    let allRanked: any[] = [];
+
+    if (getIsMockMode()) {
+      const mock = getMockDB();
+      if (category === 'coins') {
+        // Sort by coins DESC, id ASC (tie breaker: earliest registration)
+        allRanked = [...mock.users]
+          .sort((a, b) => (b.coins || 0) - (a.coins || 0) || a.id - b.id)
+          .map((u) => ({
+            userId: u.id,
+            telegramId: u.telegram_id,
+            username: u.username || 'VIP Игрок',
+            firstName: u.first_name || u.username || 'Игрок',
+            photoUrl: u.photo_url || null,
+            score: u.coins || 0,
+            formattedScore: `${(u.coins || 0).toLocaleString('ru-RU')} ₽`,
+          }));
+      } else if (category === 'cards') {
+        // Count regular minted cards (not free/bomj). Tie breaker: total estimate value, then id
+        allRanked = mock.users.map((u) => {
+          const userCards = (mock.cards || []).filter(
+            (c) => Number(c.user_id) === Number(u.id) && c.case_tier !== 'free' && !c.is_bomj
+          );
+          const totalEstimate = userCards.reduce((acc, c) => acc + (Number(c.estimated_value) || 0), 0);
+          return {
+            userId: u.id,
+            telegramId: u.telegram_id,
+            username: u.username || 'VIP Игрок',
+            firstName: u.first_name || u.username || 'Игрок',
+            photoUrl: u.photo_url || null,
+            score: userCards.length,
+            totalEstimate,
+            formattedScore: `${userCards.length} шт.`,
+          };
+        }).sort((a, b) => b.score - a.score || b.totalEstimate - a.totalEstimate || a.userId - b.userId);
+      } else if (category === 'best_card') {
+        // Best card currently owned by player (!is_sold). Ranked by rarity score, then estimate, then card date
+        const userBestMap: { [userId: number]: any } = {};
+        for (const card of mock.cards || []) {
+          if (card.is_sold) continue;
+          const uId = Number(card.user_id);
+          const rWeight = getCardRarityWeight(card.material, card.number_pattern);
+          const est = Number(card.estimated_value) || 0;
+          const existing = userBestMap[uId];
+          if (!existing || rWeight > existing.rWeight || (rWeight === existing.rWeight && est > existing.est)) {
+            userBestMap[uId] = { card, rWeight, est };
+          }
+        }
+
+        allRanked = Object.keys(userBestMap)
+          .map((uIdStr) => {
+            const uId = Number(uIdStr);
+            const u = mock.users.find((userItem) => Number(userItem.id) === uId);
+            const { card, rWeight, est } = userBestMap[uId];
+            return {
+              userId: uId,
+              telegramId: u?.telegram_id || 0,
+              username: u?.username || 'VIP Игрок',
+              firstName: u?.first_name || u?.username || 'Игрок',
+              photoUrl: u?.photo_url || null,
+              score: est,
+              rWeight,
+              formattedScore: `${est.toLocaleString('ru-RU')} ₽`,
+              cardMeta: {
+                id: card.id,
+                serialId: card.serial_id || `CD-${String(card.id).padStart(6, '0')}`,
+                bank: card.bank,
+                material: card.material,
+                numberPattern: card.number_pattern,
+                cardNumber: card.card_number,
+                estimatedValue: est,
+              },
+            };
+          })
+          .sort((a, b) => b.rWeight - a.rWeight || b.score - a.score || a.userId - b.userId);
+      }
+    } else {
+      // PostgreSQL Queries
+      if (category === 'coins') {
+        const resCoins = await query(
+          `SELECT id, telegram_id, username, first_name, photo_url, coins
+           FROM users
+           ORDER BY coins DESC, id ASC
+           LIMIT 200`
+        );
+        allRanked = resCoins.rows.map((u) => ({
+          userId: u.id,
+          telegramId: u.telegram_id,
+          username: u.username || 'VIP Игрок',
+          firstName: u.first_name || u.username || 'Игрок',
+          photoUrl: u.photo_url || null,
+          score: u.coins || 0,
+          formattedScore: `${(u.coins || 0).toLocaleString('ru-RU')} ₽`,
+        }));
+      } else if (category === 'cards') {
+        const resCards = await query(
+          `SELECT u.id, u.telegram_id, u.username, u.first_name, u.photo_url,
+                  COUNT(c.id) AS card_count,
+                  COALESCE(SUM(c.estimated_value), 0) AS total_estimate
+           FROM users u
+           LEFT JOIN cards c ON c.user_id = u.id AND (c.case_tier IS NULL OR c.case_tier != 'free')
+           GROUP BY u.id
+           ORDER BY COUNT(c.id) DESC, total_estimate DESC, u.id ASC
+           LIMIT 200`
+        );
+        allRanked = resCards.rows.map((u) => ({
+          userId: u.id,
+          telegramId: u.telegram_id,
+          username: u.username || 'VIP Игрок',
+          firstName: u.first_name || u.username || 'Игрок',
+          photoUrl: u.photo_url || null,
+          score: Number(u.card_count) || 0,
+          totalEstimate: Number(u.total_estimate) || 0,
+          formattedScore: `${Number(u.card_count) || 0} шт.`,
+        }));
+      } else if (category === 'best_card') {
+        const resBest = await query(
+          `WITH user_best_cards AS (
+             SELECT DISTINCT ON (c.user_id)
+               c.user_id, c.id AS card_id, c.serial_id, c.bank, c.material,
+               c.number_pattern, c.card_number, c.estimated_value,
+               (CASE WHEN c.material = 'Platinum' THEN 4000
+                     WHEN c.material = 'Gold' THEN 3000
+                     WHEN c.material = 'Silver' THEN 2000
+                     WHEN c.material = 'Bronze' THEN 1200
+                     ELSE 1000 END +
+                CASE WHEN c.number_pattern ILIKE '%777%' OR c.number_pattern ILIKE '%jackpot%' THEN 800
+                     WHEN c.number_pattern ILIKE '%mirror%' OR c.number_pattern ILIKE '%radar%' THEN 500
+                     WHEN c.number_pattern ILIKE '%quad%' THEN 300
+                     WHEN c.number_pattern ILIKE '%triple%' THEN 150
+                     ELSE 50 END) AS rarity_score
+             FROM cards c
+             WHERE c.is_sold = false
+             ORDER BY c.user_id, rarity_score DESC, c.estimated_value DESC, c.id ASC
+           )
+           SELECT u.id, u.telegram_id, u.username, u.first_name, u.photo_url,
+                  ub.card_id, ub.serial_id, ub.bank, ub.material, ub.number_pattern,
+                  ub.card_number, ub.estimated_value, ub.rarity_score
+           FROM user_best_cards ub
+           JOIN users u ON u.id = ub.user_id
+           ORDER BY ub.rarity_score DESC, ub.estimated_value DESC, u.id ASC
+           LIMIT 200`
+        );
+        allRanked = resBest.rows.map((row) => ({
+          userId: row.id,
+          telegramId: row.telegram_id,
+          username: row.username || 'VIP Игрок',
+          firstName: row.first_name || row.username || 'Игрок',
+          photoUrl: row.photo_url || null,
+          score: Number(row.estimated_value) || 0,
+          formattedScore: `${(Number(row.estimated_value) || 0).toLocaleString('ru-RU')} ₽`,
+          cardMeta: {
+            id: row.card_id,
+            serialId: row.serial_id || `CD-${String(row.card_id).padStart(6, '0')}`,
+            bank: row.bank,
+            material: row.material,
+            numberPattern: row.number_pattern,
+            cardNumber: row.card_number,
+            estimatedValue: Number(row.estimated_value) || 0,
+          },
+        }));
+      }
+    }
+
+    // Attach Rank, History Trends (↑ 12, ↓ 3, —, Новый), and update History
+    const historyRes = await query(
+      'SELECT last_position FROM leaderboard_history WHERE user_id = $1 AND category = $2',
+      [user.id, category]
+    );
+    const prevPosition = historyRes.rows.length > 0 ? Number(historyRes.rows[0].last_position) : null;
+
+    let myIndex = allRanked.findIndex((item) => Number(item.userId) === Number(user.id));
+    let myRank = myIndex !== -1 ? myIndex + 1 : allRanked.length + 1;
+
+    let myTrend: 'up' | 'down' | 'same' | 'new' = 'new';
+    let myChangeValue = 0;
+    if (prevPosition !== null) {
+      if (myRank < prevPosition) {
+        myTrend = 'up';
+        myChangeValue = prevPosition - myRank;
+      } else if (myRank > prevPosition) {
+        myTrend = 'down';
+        myChangeValue = myRank - prevPosition;
+      } else {
+        myTrend = 'same';
+      }
+    }
+
+    // Persist current position in history
+    await query(
+      `INSERT INTO leaderboard_history (user_id, category, last_position)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_id, category) DO UPDATE SET last_position = $3, updated_at = CURRENT_TIMESTAMP`,
+      [user.id, category, myRank]
+    );
+
+    // Build Top 100 list
+    const top100 = allRanked.slice(0, 100).map((item, idx) => ({
+      ...item,
+      rank: idx + 1,
+      trend: item.userId === user.id ? myTrend : 'same',
+      changeValue: item.userId === user.id ? myChangeValue : undefined,
+    }));
+
+    // Calculate My Position details
+    const myItem = allRanked[myIndex];
+    let diffToNext: number | null = null;
+    let nextScore: number | null = null;
+    let nextCardMeta: any = null;
+
+    if (myIndex > 0) {
+      const playerAbove = allRanked[myIndex - 1];
+      nextScore = playerAbove.score;
+      diffToNext = Math.max(1, (playerAbove.score || 0) - ((myItem?.score) || 0) + (category === 'cards' ? 1 : 0));
+      if (category === 'best_card') {
+        nextCardMeta = playerAbove.cardMeta;
+      }
+    } else if (myIndex === 0) {
+      diffToNext = 0; // Already 1st place!
+    } else if (allRanked.length > 0) {
+      // User not in ranked list (e.g. 0 cards or no unsold card)
+      const lastPlayer = allRanked[allRanked.length - 1];
+      diffToNext = Math.max(1, (lastPlayer.score || 0) + 1);
+    }
+
+    const myPosition = {
+      rank: myRank,
+      score: myItem ? myItem.score : 0,
+      formattedScore: myItem ? myItem.formattedScore : (category === 'cards' ? '0 шт.' : '0 ₽'),
+      trend: myTrend,
+      changeValue: myChangeValue,
+      diffToNext,
+      nextScore,
+      nextCardMeta,
+      cardMeta: myItem?.cardMeta || null,
+    };
+
+    res.json({
+      success: true,
+      category,
+      top: top100,
+      myPosition,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/settings — Retrieve player settings
+apiRouter.get('/settings', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const sRes = await query('SELECT * FROM user_settings WHERE user_id = $1', [user.id]);
+    const s = sRes.rows[0] || {
+      sound_enabled: true,
+      haptics_enabled: true,
+      animations_enabled: true,
+      notifications_enabled: true,
+      compact_mode: false,
+      onboarding_completed: false,
+    };
+
+    res.json({
+      success: true,
+      settings: {
+        soundEnabled: s.sound_enabled ?? true,
+        hapticsEnabled: s.haptics_enabled ?? true,
+        animationsEnabled: s.animations_enabled ?? true,
+        notificationsEnabled: s.notifications_enabled ?? true,
+        compactMode: s.compact_mode ?? false,
+        onboardingCompleted: s.onboarding_completed ?? false,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/settings — Update player settings
+apiRouter.post('/settings', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const {
+      soundEnabled = true,
+      hapticsEnabled = true,
+      animationsEnabled = true,
+      notificationsEnabled = true,
+      compactMode = false,
+      onboardingCompleted = false,
+    } = req.body;
+
+    const sRes = await query(
+      `INSERT INTO user_settings (user_id, sound_enabled, haptics_enabled, animations_enabled, notifications_enabled, compact_mode, onboarding_completed, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+       ON CONFLICT (user_id) DO UPDATE SET
+         sound_enabled = EXCLUDED.sound_enabled,
+         haptics_enabled = EXCLUDED.haptics_enabled,
+         animations_enabled = EXCLUDED.animations_enabled,
+         notifications_enabled = EXCLUDED.notifications_enabled,
+         compact_mode = EXCLUDED.compact_mode,
+         onboarding_completed = EXCLUDED.onboarding_completed,
+         updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [
+        user.id,
+        Boolean(soundEnabled),
+        Boolean(hapticsEnabled),
+        Boolean(animationsEnabled),
+        Boolean(notificationsEnabled),
+        Boolean(compactMode),
+        Boolean(onboardingCompleted),
+      ]
+    );
+
+    const s = sRes.rows[0];
+    res.json({
+      success: true,
+      settings: {
+        soundEnabled: s.sound_enabled,
+        hapticsEnabled: s.haptics_enabled,
+        animationsEnabled: s.animations_enabled,
+        notificationsEnabled: s.notifications_enabled,
+        compactMode: s.compact_mode,
+        onboardingCompleted: s.onboarding_completed,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/admin/verify — Check if password matches or user has admin role
+apiRouter.post('/admin/verify', async (req: AuthenticatedRequest, res: Response) => {
+  const { password } = req.body;
+  const isMatch = password === ADMIN_SECRET_PASSWORD || isUserAdmin(req.telegramUser);
+  res.json({ success: true, isAdmin: Boolean(isMatch) });
+});
+
+// GET /api/admin/users — Search and inspect players
+apiRouter.get('/admin/users', adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const search = (req.query.query as string || '').trim().toLowerCase();
+    let usersList: any[] = [];
+
+    if (getIsMockMode()) {
+      const mock = getMockDB();
+      usersList = mock.users
+        .filter((u) => {
+          if (!search) return true;
+          return (
+            String(u.id) === search ||
+            String(u.telegram_id) === search ||
+            (u.username && u.username.toLowerCase().includes(search)) ||
+            (u.first_name && u.first_name.toLowerCase().includes(search))
+          );
+        })
+        .map((u) => {
+          const cardsCount = (mock.cards || []).filter((c) => Number(c.user_id) === Number(u.id)).length;
+          const clicker = (mock.user_clicker || []).find((c) => Number(c.user_id) === Number(u.id));
+          return {
+            id: u.id,
+            telegramId: u.telegram_id,
+            username: u.username,
+            firstName: u.first_name,
+            coins: u.coins,
+            level: u.level,
+            cardsCount,
+            totalClicks: clicker?.total_clicks || 0,
+            createdAt: u.created_at,
+          };
+        });
+    } else {
+      const usersRes = await query(
+        `SELECT u.id, u.telegram_id, u.username, u.first_name, u.coins, u.level, u.created_at,
+                COUNT(c.id) AS cards_count,
+                COALESCE(cl.total_clicks, 0) AS total_clicks
+         FROM users u
+         LEFT JOIN cards c ON c.user_id = u.id
+         LEFT JOIN user_clicker cl ON cl.user_id = u.id
+         WHERE $1 = '' OR u.username ILIKE '%' || $1 || '%' OR u.first_name ILIKE '%' || $1 || '%' OR u.id::text = $1 OR u.telegram_id::text = $1
+         GROUP BY u.id, cl.total_clicks
+         ORDER BY u.id DESC
+         LIMIT 50`,
+        [search]
+      );
+      usersList = usersRes.rows.map((row) => ({
+        id: row.id,
+        telegramId: row.telegram_id,
+        username: row.username,
+        firstName: row.first_name,
+        coins: row.coins,
+        level: row.level,
+        cardsCount: Number(row.cards_count),
+        totalClicks: Number(row.total_clicks),
+        createdAt: row.created_at,
+      }));
+    }
+
+    res.json({ success: true, users: usersList });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/admin/adjust-balance — Adjust user balance with audit log
+apiRouter.post('/admin/adjust-balance', adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { targetUserId, amount, reason } = req.body;
+    if (!targetUserId || typeof amount !== 'number' || !reason || reason.trim().length < 3) {
+      return res.status(400).json({
+        success: false,
+        error: 'Требуется указать ID игрока, число монет и причину изменения (минимум 3 символа)',
+      });
+    }
+
+    const adminTgId = req.telegramUser?.id || 0;
+
+    const result = await withTransaction(async (client) => {
+      const userRes = await client.query('SELECT * FROM users WHERE id = $1', [targetUserId]);
+      if (userRes.rowCount === 0) {
+        throw new Error('Игрок с указанным ID не найден');
+      }
+
+      const prevCoins = userRes.rows[0].coins;
+      const newCoins = Math.max(0, prevCoins + amount);
+
+      const updateRes = await client.query('UPDATE users SET coins = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING coins', [
+        newCoins,
+        targetUserId,
+      ]);
+
+      // Record in Coin Ledger
+      await client.query(
+        `INSERT INTO coin_ledger (user_id, amount, balance_after, reason, reference_id)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [targetUserId, amount, newCoins, `[ADMIN] ${reason.trim()}`, `admin_${adminTgId}`]
+      );
+
+      // Record in Admin Audit Log
+      await client.query(
+        `INSERT INTO admin_audit_log (admin_telegram_id, action, target_user_id, reason, details)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          adminTgId,
+          'adjust_balance',
+          targetUserId,
+          reason.trim(),
+          JSON.stringify({ prevCoins, amount, newCoins }),
+        ]
+      );
+
+      return { prevCoins, newCoins: updateRes.rows[0].coins };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/admin/audit-logs — Retrieve recent audit logs
+apiRouter.get('/admin/audit-logs', adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const logsRes = await query('SELECT * FROM admin_audit_log ORDER BY created_at DESC LIMIT 50');
+    res.json({ success: true, logs: logsRes.rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/admin/stats — Retrieve overview system stats
+apiRouter.get('/admin/stats', adminMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (getIsMockMode()) {
+      const mock = getMockDB();
+      const totalUsers = mock.users.length;
+      const totalCards = (mock.cards || []).length;
+      const totalCoins = mock.users.reduce((acc, u) => acc + (u.coins || 0), 0);
+      const totalClicks = (mock.user_clicker || []).reduce((acc, c) => acc + (c.total_clicks || 0), 0);
+      return res.json({
+        success: true,
+        stats: { totalUsers, totalCards, totalCoins, totalClicks },
+      });
+    }
+
+    const [uRes, cRes, coinsRes, clickRes] = await Promise.all([
+      query('SELECT COUNT(*) AS count FROM users'),
+      query('SELECT COUNT(*) AS count FROM cards'),
+      query('SELECT COALESCE(SUM(coins), 0) AS sum FROM users'),
+      query('SELECT COALESCE(SUM(total_clicks), 0) AS sum FROM user_clicker'),
+    ]);
+
+    res.json({
+      success: true,
+      stats: {
+        totalUsers: Number(uRes.rows[0].count),
+        totalCards: Number(cRes.rows[0].count),
+        totalCoins: Number(coinsRes.rows[0].sum),
+        totalClicks: Number(clickRes.rows[0].sum),
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
