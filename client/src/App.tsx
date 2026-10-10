@@ -5,18 +5,23 @@ import { initTelegramApp, tg } from './utils/telegram.js';
 import { TopNav } from './components/TopNav.js';
 import { MintTerminal } from './components/MintTerminal.js';
 import { CollectionView } from './components/CollectionView.js';
+import { AvitaView } from './components/AvitaView.js';
 import { AlbumsView } from './components/AlbumsView.js';
 import { TasksView } from './components/TasksView.js';
 import { StarsShopView } from './components/StarsShopView.js';
 import { ProfileView } from './components/ProfileView.js';
 import { NavigationMenu, NavScreen } from './components/NavigationMenu.js';
 import { CardDetailModal } from './components/CardDetailModal.js';
+import { RulesModal } from './components/RulesModal.js';
+import { PrivacyModal } from './components/PrivacyModal.js';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [currentScreen, setCurrentScreen] = useState<NavScreen>('mint');
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  const [showRulesModal, setShowRulesModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const loadUserData = useCallback(async () => {
@@ -111,6 +116,14 @@ export const App: React.FC = () => {
           />
         )}
 
+        {currentScreen === 'avita' && (
+          <AvitaView
+            user={user}
+            onRefreshUser={loadUserData}
+            onOpenCardDetails={(card) => setSelectedCard(card)}
+          />
+        )}
+
         {currentScreen === 'albums' && <AlbumsView />}
 
         {currentScreen === 'tasks' && <TasksView onRewardClaimed={loadUserData} />}
@@ -131,6 +144,8 @@ export const App: React.FC = () => {
           currentScreen={currentScreen}
           onSelectScreen={(screen) => setCurrentScreen(screen)}
           onClose={() => setMenuOpen(false)}
+          onOpenRules={() => setShowRulesModal(true)}
+          onOpenPrivacy={() => setShowPrivacyModal(true)}
         />
       )}
 
@@ -143,6 +158,12 @@ export const App: React.FC = () => {
           onClose={() => setSelectedCard(null)}
         />
       )}
+
+      {/* Rules Modal */}
+      {showRulesModal && <RulesModal onClose={() => setShowRulesModal(false)} />}
+
+      {/* Privacy Policy Modal */}
+      {showPrivacyModal && <PrivacyModal onClose={() => setShowPrivacyModal(false)} />}
     </div>
   );
 };

@@ -102,3 +102,43 @@ export interface LeaderboardUser {
   cardsCount: number;
   score: number;
 }
+
+export interface AvitaMessage {
+  sender: 'avita' | 'player';
+  message: string;
+  timestamp: string;
+}
+
+export interface AvitaSession {
+  sessionId: string;
+  cards: Card[];
+  initialOffer: number;
+  currentOffer: number;
+  maxOffer: number;
+  roundsUsed: number;
+  dialogHistory: AvitaMessage[];
+  isLastRound: boolean;
+}
+
+export interface AvitaDeal {
+  id: number;
+  dealId: string;
+  cardCount: number;
+  cardsSummary: {
+    id: number;
+    bank: BankName;
+    material: MaterialName;
+    category: CategoryName;
+    cardNumber: string;
+  }[];
+  finalPrice: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface AvitaStatus {
+  isBlocked: boolean;
+  blockedUntil: string | null;
+  secondsRemaining: number;
+}
+

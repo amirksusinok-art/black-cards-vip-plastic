@@ -1,5 +1,16 @@
 import { getTelegramInitData } from './telegram.js';
-import { UserProfile, Card, CardTemplateGroup, TaskItem, AlbumItem, CosmeticItem, LeaderboardUser } from '../types.js';
+import {
+  UserProfile,
+  Card,
+  CardTemplateGroup,
+  TaskItem,
+  AlbumItem,
+  CosmeticItem,
+  LeaderboardUser,
+  AvitaSession,
+  AvitaDeal,
+  AvitaStatus,
+} from '../types.js';
 
 const API_BASE = '/api';
 
@@ -128,4 +139,48 @@ export const api = {
 
   getLeaderboard: () =>
     request<{ success: boolean; leaderboard: LeaderboardUser[] }>('/leaderboard'),
+
+  // Avita Merchant Endpoints
+  getAvitaStatus: () =>
+    request<{ success: boolean; isBlocked: boolean; blockedUntil: string | null; secondsRemaining: number }>(
+      '/avita/status'
+    ),
+
+  quoteAvita: (cardIds: number[]) =>
+    request<{ success: boolean; session: AvitaSession }>('/avita/quote', {
+      method: 'POST',
+      body: JSON.stringify({ cardIds }),
+    }),
+
+  bargainAvita: (sessionId: string, playerDemand: number) =>
+    request<{
+      success: boolean;
+      accepted: boolean;
+      rejected: boolean;
+      isBlocked: boolean;
+      blockedUntil: string | null;
+      secondsRemaining: number;
+      newOffer: number;
+      roundsUsed: number;
+      isLastRound: boolean;
+      dialogHistory: any[];
+    }>('/avita/bargain', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId, playerDemand }),
+    }),
+
+  acceptAvitaDeal: (sessionId: string) =>
+    request<{ success: boolean; coinsEarned: number; cardsSold: number }>('/avita/accept', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    }),
+
+  cancelAvitaDeal: (sessionId: string) =>
+    request<{ success: boolean; message: string; dialogHistory: any[] }>('/avita/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    }),
+
+  getAvitaHistory: () =>
+    request<{ success: boolean; deals: AvitaDeal[] }>('/avita/history'),
 };

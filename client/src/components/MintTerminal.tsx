@@ -337,7 +337,7 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
                 {autoSpinCount * 500} C)
               </label>
               <div className="grid grid-cols-5 gap-1.5">
-                {[5, 10, 25, 50, 100].map((n) => (
+                {[1, 10, 25, 50, 100].map((n) => (
                   <button
                     key={n}
                     onClick={() => setAutoSpinCount(n)}
@@ -353,15 +353,33 @@ export const MintTerminal: React.FC<MintTerminalProps> = ({
               </div>
             </div>
 
-            {/* Custom Slider */}
-            <input
-              type="range"
-              min="1"
-              max="100"
-              value={autoSpinCount}
-              onChange={(e) => setAutoSpinCount(parseInt(e.target.value, 10))}
-              className="w-full accent-amber-400 cursor-pointer"
-            />
+            {/* Custom Input & Slider */}
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="1"
+                max="100"
+                value={autoSpinCount}
+                onChange={(e) => setAutoSpinCount(parseInt(e.target.value, 10) || 1)}
+                className="flex-1 accent-amber-400 cursor-pointer"
+              />
+              <div className="flex items-center gap-1 font-mono text-xs">
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={autoSpinCount}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val)) {
+                      setAutoSpinCount(Math.min(100, Math.max(1, val)));
+                    }
+                  }}
+                  className="w-14 px-2 py-1 rounded-lg bg-black/50 border border-white/15 text-white text-center font-bold font-mono focus:outline-none focus:border-amber-400"
+                />
+                <span className="text-white/40 text-[10px]">шт.</span>
+              </div>
+            </div>
 
             <div className="flex gap-2 pt-2">
               <button

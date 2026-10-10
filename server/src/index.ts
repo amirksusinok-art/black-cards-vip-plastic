@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { initDatabase } from './db.js';
 import { authMiddleware } from './auth.js';
 import { apiRouter } from './routes.js';
+import { setupTelegramBot } from './bot.js';
 
 dotenv.config();
 
@@ -13,6 +14,9 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+// Initialize Telegram Bot & Stars Webhook
+setupTelegramBot(app);
 
 // Request logger
 app.use((req, res, next) => {
@@ -26,9 +30,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Protect all /api routes (except /api/health) with auth middleware
+// Protect all /api routes (except /api/health and /api/telegram/webhook) with auth middleware
 app.use('/api', (req, res, next) => {
-  if (req.path === '/health') {
+  if (req.path === '/health' || req.path === '/telegram/webhook') {
     return next();
   }
   return authMiddleware(req as any, res, next);

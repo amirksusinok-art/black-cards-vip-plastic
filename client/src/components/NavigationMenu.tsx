@@ -1,23 +1,52 @@
 import React from 'react';
-import { X, CreditCard, Layers, BookOpen, Gift, ShoppingBag, User, Sparkles } from 'lucide-react';
+import {
+  X,
+  CreditCard,
+  Layers,
+  BookOpen,
+  Gift,
+  ShoppingBag,
+  User,
+  Sparkles,
+  Store,
+  Shield,
+  FileText,
+} from 'lucide-react';
 import { hapticSelection } from '../utils/telegram.js';
 
-export type NavScreen = 'mint' | 'collection' | 'albums' | 'tasks' | 'shop' | 'profile';
+export type NavScreen =
+  | 'mint'
+  | 'collection'
+  | 'avita'
+  | 'albums'
+  | 'tasks'
+  | 'shop'
+  | 'profile';
 
 interface NavigationMenuProps {
   currentScreen: NavScreen;
   onSelectScreen: (screen: NavScreen) => void;
   onClose: () => void;
+  onOpenRules: () => void;
+  onOpenPrivacy: () => void;
 }
 
 export const NavigationMenu: React.FC<NavigationMenuProps> = ({
   currentScreen,
   onSelectScreen,
   onClose,
+  onOpenRules,
+  onOpenPrivacy,
 }) => {
   const menuItems: { id: NavScreen; label: string; icon: React.ReactNode; badge?: string }[] = [
     { id: 'mint', label: 'Выпуск карт', icon: <CreditCard className="w-5 h-5 text-emerald-400" /> },
     { id: 'collection', label: 'Коллекция', icon: <Layers className="w-5 h-5 text-cyan-400" /> },
+    {
+      id: 'avita',
+      label: '«Авита» (Скупщик)',
+      icon: <Store className="w-5 h-5 text-amber-400" />,
+      badge: 'Рынок',
+    },
     { id: 'albums', label: 'Альбомы', icon: <BookOpen className="w-5 h-5 text-amber-400" /> },
     { id: 'tasks', label: 'Задания', icon: <Gift className="w-5 h-5 text-purple-400" />, badge: '500 C' },
     { id: 'shop', label: 'Магазин Stars', icon: <ShoppingBag className="w-5 h-5 text-amber-300" />, badge: 'VIP' },
@@ -72,6 +101,31 @@ export const NavigationMenu: React.FC<NavigationMenuProps> = ({
               </button>
             );
           })}
+        </div>
+
+        {/* Legal & Info Links */}
+        <div className="flex items-center justify-around pt-3 border-t border-white/10 text-xs text-white/40">
+          <button
+            onClick={() => {
+              onClose();
+              onOpenRules();
+            }}
+            className="flex items-center gap-1 hover:text-amber-400 transition-colors py-1 px-2"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Правила
+          </button>
+          <span>•</span>
+          <button
+            onClick={() => {
+              onClose();
+              onOpenPrivacy();
+            }}
+            className="flex items-center gap-1 hover:text-emerald-400 transition-colors py-1 px-2"
+          >
+            <Shield className="w-3.5 h-3.5" />
+            Конфиденциальность
+          </button>
         </div>
       </div>
     </div>

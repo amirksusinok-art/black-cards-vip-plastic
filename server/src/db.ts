@@ -29,6 +29,8 @@ interface MockDB {
   star_payments: any[];
   user_favorites: any[];
   user_settings: any[];
+  avita_sessions: any[];
+  avita_deals: any[];
 }
 
 const mockDbPath = path.resolve(process.cwd(), 'data_local_store.json');
@@ -71,7 +73,9 @@ function loadMockData(): MockDB {
     user_cosmetics: [],
     star_payments: [],
     user_favorites: [],
-    user_settings: []
+    user_settings: [],
+    avita_sessions: [],
+    avita_deals: []
   };
 }
 
@@ -103,12 +107,15 @@ export async function initDatabase(): Promise<void> {
       await pool.query('SELECT 1');
       console.log('PostgreSQL connected successfully.');
 
-      // Run migration
-      const migrationFile = path.resolve(__dirname, '../migrations/001_initial_schema.sql');
-      if (fs.existsSync(migrationFile)) {
-        const sql = fs.readFileSync(migrationFile, 'utf8');
-        await pool.query(sql);
-        console.log('Database migrations applied successfully.');
+      // Run all migrations in order
+      const migrationsDir = path.resolve(__dirname, '../migrations');
+      if (fs.existsSync(migrationsDir)) {
+        const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+        for (const file of files) {
+          const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+          await pool.query(sql);
+          console.log(`Migration ${file} applied successfully.`);
+        }
       }
       return;
     } catch (err) {
@@ -234,6 +241,20 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
     return { rows: [], rowCount: 0 };
   }
 
+  if (sql.includes('UPDATE users SET coins = coins +')) {
+    const amountMatch = sql.match(/coins\s*\+\s*(\d+)/i);
+    const amount = amountMatch ? parseInt(amountMatch[1], 10) : Number(params[0]);
+    const userId = params[params.length - 1];
+    const user = mockDB.users.find(u => Number(u.id) === Number(userId));
+    if (user) {
+      user.coins += amount;
+      user.updated_at = new Date().toISOString();
+      saveMockData();
+      return { rows: [user], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
   if (sql.includes('UPDATE users SET coins =')) {
     const newCoins = params[0];
     const userId = params[params.length - 1];
@@ -293,7 +314,7 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
 
   if (sql.includes('FROM cards WHERE user_id =') && sql.includes('ORDER BY created_at DESC')) {
     const userId = params[0];
-    let userCards = mockDB.cards.filter(c => c.user_id === Number(userId));
+    let userCards = mockDB.cards.filter(c => c.user_id === Number(userId) && !c.is_sold);
     
     // Check filters
     if (sql.includes('bank =')) {
@@ -307,6 +328,12 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
 
     userCards.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     return { rows: userCards, rowCount: userCards.length };
+  }
+
+  if (sql.includes('FROM cards WHERE id = ANY(') || sql.includes('FROM cards WHERE id IN (')) {
+    const ids = Array.isArray(params[0]) ? params[0].map(Number) : params.map(Number);
+    const matched = mockDB.cards.filter(c => ids.includes(Number(c.id)));
+    return { rows: matched, rowCount: matched.length };
   }
 
   if (sql.includes('FROM cards WHERE id =') || sql.includes('FROM cards WHERE card_uid =')) {
@@ -380,6 +407,111 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[]; rowCo
   // 8. Albums
   if (sql.includes('FROM albums')) {
     return { rows: mockDB.albums, rowCount: mockDB.albums.length };
+  }
+
+  // 9. Avita Cooldown and Users updates
+  if (sql.includes('UPDATE users SET avita_blocked_until =')) {
+    const until = params[0];
+    const userId = params[params.length - 1];
+    const user = mockDB.users.find(u => Number(u.id) === Number(userId));
+    if (user) {
+      user.avita_blocked_until = until;
+      saveMockData();
+      return { rows: [user], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  // 10. Avita Sessions
+  if (sql.includes('FROM avita_sessions WHERE session_id =')) {
+    const sId = params[0];
+    const s = mockDB.avita_sessions.find(item => item.session_id === sId);
+    return { rows: s ? [s] : [], rowCount: s ? 1 : 0 };
+  }
+
+  if (sql.includes('INSERT INTO avita_sessions')) {
+    const [sId, userId, cardIds, initOffer, currOffer, maxOffer, rounds, status, hist] = params;
+    const session = {
+      id: mockDB.avita_sessions.length + 1,
+      session_id: sId,
+      user_id: Number(userId),
+      card_ids: typeof cardIds === 'string' ? JSON.parse(cardIds) : cardIds,
+      initial_offer: Number(initOffer),
+      current_offer: Number(currOffer),
+      max_offer: Number(maxOffer),
+      rounds_used: Number(rounds || 0),
+      status: status || 'active',
+      dialog_history: typeof hist === 'string' ? JSON.parse(hist) : hist || [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    mockDB.avita_sessions.push(session);
+    saveMockData();
+    return { rows: [session], rowCount: 1 };
+  }
+
+  if (sql.includes('UPDATE avita_sessions')) {
+    const sId = params[params.length - 1];
+    const session = mockDB.avita_sessions.find(item => item.session_id === sId);
+    if (session) {
+      if (sql.includes('current_offer =')) session.current_offer = Number(params[0]);
+      if (sql.includes('rounds_used =')) session.rounds_used = Number(params[1]);
+      if (sql.includes('status =')) session.status = params[2] || session.status;
+      if (sql.includes('dialog_history =')) {
+        const histParam = params.find(p => typeof p === 'string' && (p.startsWith('[') || p.startsWith('{')));
+        if (histParam) session.dialog_history = JSON.parse(histParam);
+      }
+      session.updated_at = new Date().toISOString();
+      saveMockData();
+      return { rows: [session], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  // 11. Cards Sold Update
+  if (sql.includes('UPDATE cards SET is_sold = true')) {
+    const price = params[0];
+    // card ids might be in WHERE id = ANY($2) or WHERE id = $2
+    const targetIds: number[] = [];
+    for (let i = 1; i < params.length; i++) {
+      if (Array.isArray(params[i])) targetIds.push(...params[i].map(Number));
+      else if (typeof params[i] === 'number') targetIds.push(params[i]);
+    }
+    const updated: any[] = [];
+    for (const card of mockDB.cards) {
+      if (targetIds.includes(Number(card.id))) {
+        card.is_sold = true;
+        card.sold_price = Number(price);
+        card.sold_at = new Date().toISOString();
+        updated.push(card);
+      }
+    }
+    saveMockData();
+    return { rows: updated, rowCount: updated.length };
+  }
+
+  // 12. Avita Deals
+  if (sql.includes('INSERT INTO avita_deals')) {
+    const [dealId, userId, cardCount, summary, finalPrice, status] = params;
+    const deal = {
+      id: mockDB.avita_deals.length + 1,
+      deal_id: dealId,
+      user_id: Number(userId),
+      card_count: Number(cardCount),
+      cards_summary: typeof summary === 'string' ? JSON.parse(summary) : summary,
+      final_price: Number(finalPrice),
+      status: status || 'completed',
+      created_at: new Date().toISOString()
+    };
+    mockDB.avita_deals.push(deal);
+    saveMockData();
+    return { rows: [deal], rowCount: 1 };
+  }
+
+  if (sql.includes('FROM avita_deals WHERE user_id =')) {
+    const userId = params[0];
+    const deals = mockDB.avita_deals.filter(d => Number(d.user_id) === Number(userId));
+    return { rows: deals, rowCount: deals.length };
   }
 
   // Fallback generic empty

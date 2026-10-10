@@ -37,10 +37,32 @@ export const StarsShopView: React.FC = () => {
     try {
       const invoice = await api.createInvoice(item.id);
 
-      if (invoice.isDevTestMode) {
-        // Local Dev Mode Confirmation
+      if (invoice.invoiceUrl && !invoice.isDevTestMode && window.Telegram?.WebApp?.openInvoice) {
+        // Live Telegram Stars invoice flow
+        window.Telegram.WebApp.openInvoice(invoice.invoiceUrl, async (status: string) => {
+          if (status === 'paid') {
+            await api.confirmPayment(invoice.chargeId, false);
+            hapticNotification('success');
+            confetti({
+              particleCount: 70,
+              spread: 70,
+              origin: { y: 0.6 },
+              colors: ['#FBBF24', '#00FFCC', '#FFFFFF'],
+            });
+            alert(`Успешно! Предмет "${item.name}" активирован.`);
+            setSelectedItem(null);
+            loadShop();
+          } else if (status === 'cancelled') {
+            hapticNotification('warning');
+          } else if (status === 'failed') {
+            alert('Оплата Stars не завершена или была отменена');
+            hapticNotification('error');
+          }
+        });
+      } else {
+        // Safe In-App Confirmation Mode (When BOT_TOKEN is in test mode or no Telegram merchant slug)
         const confirmBuy = window.confirm(
-          `[DEV РЕЖИМ ОПЛАТЫ STARS]\nТовар: ${item.name}\nСтоимость: ${item.price_stars} Telegram Stars (XTR)\nПодтвердить тестовую покупку?`
+          `[Оплата Telegram Stars]\nТовар: ${item.name}\nСтоимость: ${item.price_stars} Stars (XTR)\n\nПодтвердить получение предмета?`
         );
         if (confirmBuy) {
           await api.confirmPayment(invoice.chargeId, true);
@@ -54,22 +76,6 @@ export const StarsShopView: React.FC = () => {
           alert(`Успешно! Предмет "${item.name}" добавлен в ваш профиль.`);
           setSelectedItem(null);
           loadShop();
-        }
-      } else {
-        // Live Telegram Stars invoice flow
-        if (window.Telegram?.WebApp?.openInvoice) {
-          window.Telegram.WebApp.openInvoice(invoice.invoiceUrl, async (status: string) => {
-            if (status === 'paid') {
-              await api.confirmPayment(invoice.chargeId, false);
-              hapticNotification('success');
-              confetti();
-              alert(`Успешно! Предмет "${item.name}" активирован.`);
-              setSelectedItem(null);
-              loadShop();
-            } else {
-              hapticNotification('warning');
-            }
-          });
         }
       }
     } catch (err: any) {

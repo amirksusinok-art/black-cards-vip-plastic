@@ -3,6 +3,12 @@ import crypto from 'crypto';
 import { AuthenticatedRequest } from './auth.js';
 import { query, withTransaction } from './db.js';
 import { generateCard, BankName, MaterialName, CategoryName } from './gameEngine.js';
+import {
+  evaluateSingleCard,
+  evaluateBatchCards,
+  generateInitialGreeting,
+  processBargainRound,
+} from './avitaEngine.js';
 
 export const apiRouter = Router();
 
@@ -74,7 +80,10 @@ apiRouter.get('/me', async (req: AuthenticatedRequest, res: Response) => {
     const favorites = favRes.rows.map((r: any) => r.card_id);
 
     // Total unique cards count
-    const cardsRes = await query('SELECT COUNT(*) as count FROM cards WHERE user_id = $1', [user.id]);
+    const cardsRes = await query(
+      'SELECT COUNT(*) as count FROM cards WHERE user_id = $1 AND (is_sold IS NULL OR is_sold = false)',
+      [user.id]
+    );
     const totalCards = parseInt(cardsRes.rows[0]?.count || '0', 10);
 
     res.json({
@@ -398,7 +407,7 @@ apiRouter.get('/cards', async (req: AuthenticatedRequest, res: Response) => {
     const user = await getOrCreateUser(req.telegramUser);
 
     const queryParams: any[] = [user.id];
-    let sql = 'SELECT * FROM cards WHERE user_id = $1';
+    let sql = 'SELECT * FROM cards WHERE user_id = $1 AND (is_sold IS NULL OR is_sold = false)';
 
     if (bank) {
       queryParams.push(bank);
@@ -685,8 +694,37 @@ apiRouter.post('/payments/stars/create', async (req: AuthenticatedRequest, res: 
       [chargeId, user.id, item.id, item.price_stars]
     );
 
-    // If running in development mode without bot token, allow instant demo unlock
-    const isDev = process.env.NODE_ENV !== 'production' || !process.env.BOT_TOKEN;
+    let invoiceUrl: string | null = null;
+    let isDev = false;
+
+    if (process.env.BOT_TOKEN) {
+      try {
+        const tgRes = await fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/createInvoiceLink`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: item.name,
+            description: item.description || `Косметический предмет ${item.name}`,
+            payload: chargeId,
+            provider_token: '', // Required empty string for Telegram Stars (XTR)
+            currency: 'XTR',
+            prices: [{ label: item.name, amount: item.price_stars }],
+          }),
+        });
+        const tgData = (await tgRes.json()) as any;
+        if (tgData.ok && tgData.result) {
+          invoiceUrl = tgData.result;
+        } else {
+          console.warn('[Stars Payment] createInvoiceLink returned non-ok:', tgData);
+          isDev = true;
+        }
+      } catch (tgErr) {
+        console.warn('[Stars Payment] failed to request Telegram Bot API:', tgErr);
+        isDev = true;
+      }
+    } else {
+      isDev = true;
+    }
 
     res.json({
       success: true,
@@ -695,8 +733,8 @@ apiRouter.post('/payments/stars/create', async (req: AuthenticatedRequest, res: 
       amount: item.price_stars,
       title: item.name,
       description: item.description,
-      isDevTestMode: isDev,
-      invoiceUrl: isDev ? null : `https://t.me/$bot?startattach=${chargeId}`,
+      isDevTestMode: isDev || !invoiceUrl,
+      invoiceUrl,
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -750,9 +788,10 @@ apiRouter.get('/albums', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = await getOrCreateUser(req.telegramUser);
     const albumsRes = await query('SELECT * FROM albums ORDER BY id ASC');
-    const cardsRes = await query('SELECT bank, material, category FROM cards WHERE user_id = $1', [
-      user.id,
-    ]);
+    const cardsRes = await query(
+      'SELECT bank, material, category FROM cards WHERE user_id = $1 AND (is_sold IS NULL OR is_sold = false)',
+      [user.id]
+    );
 
     const banksSet = new Set(cardsRes.rows.map((c: any) => c.bank));
     const matsSet = new Set(cardsRes.rows.map((c: any) => c.material));
@@ -788,7 +827,7 @@ apiRouter.get('/leaderboard', async (req: AuthenticatedRequest, res: Response) =
               COUNT(c.id) as total_cards,
               COALESCE(SUM(c.collector_score), 0) as total_score
        FROM users u
-       LEFT JOIN cards c ON c.user_id = u.id
+       LEFT JOIN cards c ON c.user_id = u.id AND (c.is_sold IS NULL OR c.is_sold = false)
        GROUP BY u.id
        ORDER BY total_score DESC, total_cards DESC
        LIMIT 20`
@@ -811,3 +850,423 @@ apiRouter.get('/leaderboard', async (req: AuthenticatedRequest, res: Response) =
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// ==========================================
+// AVITA MERCHANT ROUTES
+// ==========================================
+
+// GET /api/avita/status — Cooldown status & active session
+apiRouter.get('/avita/status', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    let isBlocked = false;
+    let secondsRemaining = 0;
+    if (user.avita_blocked_until) {
+      const blockedDate = new Date(user.avita_blocked_until).getTime();
+      const now = Date.now();
+      if (blockedDate > now) {
+        isBlocked = true;
+        secondsRemaining = Math.max(0, Math.ceil((blockedDate - now) / 1000));
+      }
+    }
+
+    res.json({
+      success: true,
+      isBlocked,
+      blockedUntil: user.avita_blocked_until,
+      secondsRemaining,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/avita/quote — Start negotiation for single card or batch
+apiRouter.post('/avita/quote', async (req: AuthenticatedRequest, res: Response) => {
+  const { cardIds } = req.body;
+  if (!cardIds || !Array.isArray(cardIds) || cardIds.length === 0) {
+    return res.status(400).json({ success: false, error: 'Выберите хотя бы одну карту для оценки' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    // 1. Check if user is blocked by Avita (120s cooldown)
+    if (user.avita_blocked_until) {
+      const blockedDate = new Date(user.avita_blocked_until).getTime();
+      const now = Date.now();
+      if (blockedDate > now) {
+        const remaining = Math.max(1, Math.ceil((blockedDate - now) / 1000));
+        return res.status(403).json({
+          success: false,
+          error: `Авита пока не хочет с вами разговаривать. Подождите ещё ${remaining} сек.`,
+          secondsRemaining: remaining,
+        });
+      }
+    }
+
+    // 2. Fetch cards
+    const numericIds = cardIds.map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id));
+    const cardsRes = await query('SELECT * FROM cards WHERE id = ANY($1)', [numericIds]);
+    const cards = cardsRes.rows.filter((c: any) => c.user_id === user.id && !c.is_sold);
+
+    if (cards.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Выбранные карты не найдены в вашей коллекции или уже проданы',
+      });
+    }
+
+    // 3. Free Roll Card Check (BOMZH Mode rejection rule)
+    const hasFreeRoll = cards.some((c: any) => c.is_free_roll);
+    if (hasFreeRoll) {
+      return res.status(400).json({
+        success: false,
+        error: 'Эту карту я не покупаю. Она получена в бесплатном режиме и не предназначена для продажи.',
+      });
+    }
+
+    // 4. Batch/Single Valuation
+    const batchEval = evaluateBatchCards(cards);
+    if (batchEval.evaluations.length === 0) {
+      return res.status(400).json({ success: false, error: 'Нет доступных для продажи карт' });
+    }
+
+    const greeting = generateInitialGreeting(cards, batchEval.totalInitial);
+    const sessionId = 'avita_' + crypto.randomBytes(8).toString('hex');
+    const validCardIds = batchEval.evaluations.map((e) => e.cardId);
+
+    const dialogHistory = [
+      {
+        sender: 'avita',
+        message: greeting,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    // Store active session
+    await query(
+      `INSERT INTO avita_sessions (session_id, user_id, card_ids, initial_offer, current_offer, max_offer, rounds_used, status, dialog_history)
+       VALUES ($1, $2, $3, $4, $5, $6, 0, 'active', $7)`,
+      [
+        sessionId,
+        user.id,
+        JSON.stringify(validCardIds),
+        batchEval.totalInitial,
+        batchEval.totalInitial,
+        batchEval.totalMax,
+        JSON.stringify(dialogHistory),
+      ]
+    );
+
+    res.json({
+      success: true,
+      session: {
+        sessionId,
+        cards,
+        initialOffer: batchEval.totalInitial,
+        currentOffer: batchEval.totalInitial,
+        maxOffer: batchEval.totalMax,
+        roundsUsed: 0,
+        dialogHistory,
+        isLastRound: false,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/avita/bargain — Bargaining Round (Max 3 rounds)
+apiRouter.post('/avita/bargain', async (req: AuthenticatedRequest, res: Response) => {
+  const { sessionId, playerDemand } = req.body;
+  if (!sessionId || typeof playerDemand !== 'number') {
+    return res.status(400).json({ success: false, error: 'Не указан sessionId или сумма торга' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+
+    // Check cooldown
+    if (user.avita_blocked_until) {
+      const blockedDate = new Date(user.avita_blocked_until).getTime();
+      const now = Date.now();
+      if (blockedDate > now) {
+        const remaining = Math.max(1, Math.ceil((blockedDate - now) / 1000));
+        return res.status(403).json({
+          success: false,
+          error: `Авита обиделся и не торгуется. Подождите ещё ${remaining} сек.`,
+          secondsRemaining: remaining,
+        });
+      }
+    }
+
+    const sessionRes = await query('SELECT * FROM avita_sessions WHERE session_id = $1', [sessionId]);
+    if (sessionRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Сессия торга не найдена' });
+    }
+    const session = sessionRes.rows[0];
+
+    if (session.user_id !== user.id) {
+      return res.status(403).json({ success: false, error: 'Доступ запрещен' });
+    }
+
+    if (session.status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        error: `Сессия уже завершена со статусом: ${session.status}`,
+      });
+    }
+
+    const currentRound = (session.rounds_used || 0) + 1;
+    const bargainResult = processBargainRound({
+      currentOffer: session.current_offer,
+      maxOffer: session.max_offer,
+      playerDemand: Math.round(playerDemand),
+      round: currentRound,
+    });
+
+    const parsedHistory =
+      typeof session.dialog_history === 'string'
+        ? JSON.parse(session.dialog_history)
+        : session.dialog_history || [];
+
+    parsedHistory.push({
+      sender: 'player',
+      message: `Слишком мало. Давай ${Math.round(playerDemand).toLocaleString()} Coins.`,
+      timestamp: new Date().toISOString(),
+    });
+
+    parsedHistory.push({
+      sender: 'avita',
+      message: bargainResult.avitaReply,
+      timestamp: new Date().toISOString(),
+    });
+
+    let newStatus = session.status;
+    let blockedUntil: string | null = null;
+    let secondsRemaining = 0;
+
+    if (bargainResult.rejected) {
+      // 120-second cooldown saved in database!
+      newStatus = 'rejected';
+      const blockedDate = new Date(Date.now() + 120 * 1000);
+      blockedUntil = blockedDate.toISOString();
+      secondsRemaining = 120;
+
+      await query('UPDATE users SET avita_blocked_until = $1 WHERE id = $2', [blockedUntil, user.id]);
+    } else if (bargainResult.accepted) {
+      newStatus = 'accepted';
+    }
+
+    await query(
+      `UPDATE avita_sessions
+       SET current_offer = $1, rounds_used = $2, status = $3, dialog_history = $4, updated_at = CURRENT_TIMESTAMP
+       WHERE session_id = $5`,
+      [bargainResult.newOffer, currentRound, newStatus, JSON.stringify(parsedHistory), sessionId]
+    );
+
+    res.json({
+      success: true,
+      accepted: bargainResult.accepted,
+      rejected: bargainResult.rejected,
+      isBlocked: bargainResult.rejected,
+      blockedUntil,
+      secondsRemaining,
+      newOffer: bargainResult.newOffer,
+      roundsUsed: currentRound,
+      isLastRound: bargainResult.isLastRound,
+      dialogHistory: parsedHistory,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/avita/accept — Confirm Sale & Earn Coins
+apiRouter.post('/avita/accept', async (req: AuthenticatedRequest, res: Response) => {
+  const { sessionId } = req.body;
+  if (!sessionId) {
+    return res.status(400).json({ success: false, error: 'Не указан sessionId' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const sessionRes = await query('SELECT * FROM avita_sessions WHERE session_id = $1', [sessionId]);
+
+    if (sessionRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Сессия не найдена' });
+    }
+    const session = sessionRes.rows[0];
+
+    if (session.user_id !== user.id) {
+      return res.status(403).json({ success: false, error: 'Доступ запрещен' });
+    }
+
+    if (!['active', 'accepted'].includes(session.status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Эта сделка уже закрыта, отменена или отклонена',
+      });
+    }
+
+    const cardIds: number[] =
+      typeof session.card_ids === 'string'
+        ? JSON.parse(session.card_ids)
+        : session.card_ids;
+
+    const result = await withTransaction(async (client) => {
+      // Re-verify cards ownership
+      const cardsRes = await client.query('SELECT * FROM cards WHERE id = ANY($1)', [cardIds]);
+      const validCards = cardsRes.rows.filter((c: any) => c.user_id === user.id && !c.is_sold);
+
+      if (validCards.length === 0) {
+        throw new Error('Карты уже проданы или не найдены в коллекции');
+      }
+
+      const finalPrice = session.current_offer;
+
+      // Mark cards as sold
+      await client.query(
+        'UPDATE cards SET is_sold = true, sold_price = $1, sold_at = CURRENT_TIMESTAMP WHERE id = ANY($2)',
+        [Math.round(finalPrice / validCards.length), cardIds]
+      );
+
+      // Clean up favorites
+      await client.query(
+        'DELETE FROM user_favorites WHERE user_id = $1 AND card_id = ANY($2)',
+        [user.id, cardIds]
+      );
+
+      // Add coins to user
+      await client.query('UPDATE users SET coins = coins + $1 WHERE id = $2', [finalPrice, user.id]);
+
+      // Update session status
+      const parsedHistory =
+        typeof session.dialog_history === 'string'
+          ? JSON.parse(session.dialog_history)
+          : session.dialog_history || [];
+
+      parsedHistory.push({
+        sender: 'avita',
+        message: `По рукам! Сделка успешно завершена. Забирай свои ${finalPrice.toLocaleString()} Coins.`,
+        timestamp: new Date().toISOString(),
+      });
+
+      await client.query(
+        `UPDATE avita_sessions
+         SET status = 'completed', dialog_history = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE session_id = $2`,
+        [JSON.stringify(parsedHistory), sessionId]
+      );
+
+      // Record deal
+      const dealId = 'deal_' + crypto.randomBytes(8).toString('hex');
+      const cardsSummary = validCards.map((c: any) => ({
+        id: c.id,
+        bank: c.bank,
+        material: c.material,
+        category: c.category,
+        cardNumber: c.card_number,
+      }));
+
+      await client.query(
+        `INSERT INTO avita_deals (deal_id, user_id, card_count, cards_summary, final_price, status)
+         VALUES ($1, $2, $3, $4, $5, 'completed')`,
+        [dealId, user.id, validCards.length, JSON.stringify(cardsSummary), finalPrice]
+      );
+
+      return {
+        coinsEarned: finalPrice,
+        cardsSold: validCards.length,
+      };
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/avita/cancel — Walk away peacefully (No 120s cooldown!)
+apiRouter.post('/avita/cancel', async (req: AuthenticatedRequest, res: Response) => {
+  const { sessionId } = req.body;
+  if (!sessionId) {
+    return res.status(400).json({ success: false, error: 'Не указан sessionId' });
+  }
+
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const sessionRes = await query('SELECT * FROM avita_sessions WHERE session_id = $1', [sessionId]);
+
+    if (sessionRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Сессия не найдена' });
+    }
+    const session = sessionRes.rows[0];
+
+    if (session.user_id !== user.id) {
+      return res.status(403).json({ success: false, error: 'Доступ запрещен' });
+    }
+
+    const parsedHistory =
+      typeof session.dialog_history === 'string'
+        ? JSON.parse(session.dialog_history)
+        : session.dialog_history || [];
+
+    parsedHistory.push({
+      sender: 'player',
+      message: 'Отказаться',
+      timestamp: new Date().toISOString(),
+    });
+
+    parsedHistory.push({
+      sender: 'avita',
+      message: 'Как знаешь. Карта остаётся у тебя.',
+      timestamp: new Date().toISOString(),
+    });
+
+    await query(
+      `UPDATE avita_sessions
+       SET status = 'cancelled', dialog_history = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE session_id = $2`,
+      [JSON.stringify(parsedHistory), sessionId]
+    );
+
+    res.json({
+      success: true,
+      message: 'Как знаешь. Карта остаётся у тебя.',
+      dialogHistory: parsedHistory,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/avita/history — Past completed deals
+apiRouter.get('/avita/history', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await getOrCreateUser(req.telegramUser);
+    const dealsRes = await query(
+      'SELECT * FROM avita_deals WHERE user_id = $1 ORDER BY created_at DESC LIMIT 30',
+      [user.id]
+    );
+
+    res.json({
+      success: true,
+      deals: dealsRes.rows.map((d: any) => ({
+        id: d.id,
+        dealId: d.deal_id,
+        cardCount: d.card_count,
+        cardsSummary:
+          typeof d.cards_summary === 'string' ? JSON.parse(d.cards_summary) : d.cards_summary,
+        finalPrice: d.final_price,
+        status: d.status,
+        createdAt: d.created_at,
+      })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
